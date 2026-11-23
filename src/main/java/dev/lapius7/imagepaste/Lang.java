@@ -38,6 +38,9 @@ public final class Lang {
         List<TagResolver> l = new ArrayList<>();
         for (int i = 0; i + 1 < kv.length; i += 2) {
             Object v = kv[i + 1];
+            String key = String.valueOf(kv[i]);
+            // click:run_command:'...<id>' の引用符内では <id> が展開されないため、安全な ID だけは先に文字列として埋め込む
+            if (key.equals("id") && v != null && String.valueOf(v).matches("[A-Za-z0-9_-]{1,32}")) { l.add(Placeholder.parsed(key, String.valueOf(v))); continue; }
             l.add(v instanceof Component c ? Placeholder.component(String.valueOf(kv[i]), c)
                     : Placeholder.unparsed(String.valueOf(kv[i]), String.valueOf(v)));
         }
@@ -50,6 +53,9 @@ public final class Lang {
     public Component prefixed(String key, Object... kv) { return MM.deserialize(raw("prefix") + raw(key), resolver(kv)); }
 
     public void send(CommandSender to, String key, Object... kv) { to.sendMessage(prefixed(key, kv)); }
+
+    /** テンプレート文字列をそのまま描画する (テスト用にも使える) */
+    public static Component render(String mini, Object... kv) { return MM.deserialize(mini, resolver(kv)); }
 
     public Component parse(String mini, Object... kv) { return MM.deserialize(mini, resolver(kv)); }
 }
