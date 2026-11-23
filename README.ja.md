@@ -248,17 +248,6 @@ gradle build
 
 `build/libs/ImagePaste-<版>.jar` ができます。
 
-## Modrinth への公開
-
-`v*` タグを push すると、`.github/workflows/modrinth.yml` が jar を Modrinth へ公開します。版名はタグ名、変更履歴は GitHub Release の本文を使います。下の設定をしていなければ、ジョブは失敗せず skip されます。
-
-1. [Modrinth](https://modrinth.com/) でプロジェクトを作り、プロジェクト ID を控えます。
-2. 「Create versions」権限のパーソナルアクセストークンを発行します(Settings > Personal access tokens)。
-3. GitHub リポジトリの設定で、secret `MODRINTH_TOKEN`(トークン)と variable `MODRINTH_PROJECT_ID`(プロジェクト ID)を追加します。
-4. 先に Release を作成します(`gh release create vX.Y.Z ...`)。ワークフローがその本文を取り込みます。
-
-ワークフローの対応ゲームバージョンは、上の表で確認済みの版だけです。確認が増えたら編集してください。
-
 ## ライセンス
 
 [MIT](LICENSE)

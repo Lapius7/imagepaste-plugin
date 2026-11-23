@@ -248,17 +248,6 @@ gradle build
 
 The jar is written to `build/libs/ImagePaste-<version>.jar`.
 
-## Publishing to Modrinth
-
-Pushing a `v*` tag publishes the jar to Modrinth through `.github/workflows/modrinth.yml`. The version name is the tag, and the changelog is the GitHub Release body. Without the setup below, the job is skipped and does not fail.
-
-1. Create a project on [Modrinth](https://modrinth.com/) and note its project ID.
-2. Create a personal access token with the "Create versions" scope (Settings > Personal access tokens).
-3. In the GitHub repository settings, add the secret `MODRINTH_TOKEN` (the token) and the variable `MODRINTH_PROJECT_ID` (the project ID).
-4. Create the release first (`gh release create vX.Y.Z ...`), then the workflow picks up its body.
-
-The game versions in the workflow list only the versions marked Verified above. Edit them when you verify more.
-
 ## License
 
 [MIT](LICENSE)
