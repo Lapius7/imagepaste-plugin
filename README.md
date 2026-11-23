@@ -65,7 +65,15 @@
 
 ## 演出
 
-`effects.place` / `effects.remove` で、貼り付け・撤去時のパーティクルと効果音を変えられます。`enabled: false` で無効、`particle` や `sound` を空欄にすれば個別に無効です。
+プレビューの枠と、設置時の演出は別の設定です。
+
+- **プレビューの枠**: `preview.particle` `particle-size` `edge-step` `*-color` など。控えめな単線の枠です。
+- **設置演出** (`effects.place`): 確定した瞬間に、貼り付け範囲の面に沿って粒子を散らします。外周から中心へ波のように収束し、四隅でバーストします。`duration-ticks` かけて段階的に出て、効果音も時間差で鳴ります。
+  - `layers`: 面に散らす粒子の一覧 (種類・タイルごとの数・速さ)。既定は END_ROD / FIREWORK / GLOW / ENCHANT / TOTEM_OF_UNDYING
+  - `corner-bursts`: 四隅で弾ける粒子
+  - `sounds`: 効果音の一覧 (音・音量・高さ・開始 tick)
+  - `count-multiplier`: 粒子数の倍率 (0 で粒子なし)、`enabled: false` で演出ごと無効
+- **撤去演出** (`effects.remove`): 粒子1種と音1つ。
 
 ## 権限
 

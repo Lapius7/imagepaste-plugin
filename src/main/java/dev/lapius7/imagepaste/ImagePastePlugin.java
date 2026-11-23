@@ -118,7 +118,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
 
     // ---------- 設定 ----------
     private int previewDistance = 64;
-    private double edgeStep = 0.25, dustSize = 1.8;
+    private double edgeStep = 0.5, dustSize = 1.0;
     private Particle particle = Particle.DUST;
     private Color edgeColor, topColor, cornerColor, errorColor;
     private int scrollNotches = 1, scrollStep = 1;
@@ -138,8 +138,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     private void loadCfg() {
         var c = getConfig();
         previewDistance = Math.max(2, c.getInt("preview.max-distance", 64));
-        edgeStep = Math.max(0.1, c.getDouble("preview.edge-step", 0.25));
-        dustSize = c.getDouble("preview.particle-size", 1.8);
+        edgeStep = Math.max(0.1, c.getDouble("preview.edge-step", 0.5));
+        dustSize = c.getDouble("preview.particle-size", 1.0);
         edgeColor = color(c.getString("preview.edge-color", "#55FFFF"), Color.AQUA);
         topColor = color(c.getString("preview.top-color", "#FFFF55"), Color.YELLOW);
         cornerColor = color(c.getString("preview.corner-color", "#FFFFFF"), Color.WHITE);
@@ -155,7 +155,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             onBreak = OnBreak.valueOf(c.getString("protection.on-break", "protect").toUpperCase(Locale.ROOT).replace('-', '_'));
         } catch (IllegalArgumentException e) { onBreak = OnBreak.PROTECT; }
         if (ticker != null) ticker.cancel();
-        ticker = getServer().getScheduler().runTaskTimer(this, this::tick, 10L, Math.max(1, c.getInt("preview.interval-ticks", 3)));
+        ticker = getServer().getScheduler().runTaskTimer(this, this::tick, 10L, Math.max(1, c.getInt("preview.interval-ticks", 4)));
     }
 
     // ---------- プレビュー開始 ----------
@@ -409,45 +409,22 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         }
         Color main = ok ? edgeColor : errorColor, top = ok ? topColor : errorColor;
         float sz = (float) dustSize;
-        // 外周 (内側にもう1本足して太く見せる)
         for (double x = 0; x <= W + 1e-6; x += edgeStep) {
             pt(p, o, rt, up, x, 0, main, sz);
             pt(p, o, rt, up, x, H, top, sz);
-            pt(p, o, rt, up, x, 0.07, main, sz * 0.8f);
-            pt(p, o, rt, up, x, H - 0.07, top, sz * 0.8f);
         }
         for (double y = edgeStep; y < H - 1e-6; y += edgeStep) {
             pt(p, o, rt, up, 0, y, main, sz);
             pt(p, o, rt, up, W, y, main, sz);
-            pt(p, o, rt, up, 0.07, y, main, sz * 0.8f);
-            pt(p, o, rt, up, W - 0.07, y, main, sz * 0.8f);
         }
-        // 四隅: 大きい白の塊 + 光る粒
-        for (double[] c : new double[][]{{0, 0}, {W, 0}, {0, H}, {W, H}}) {
-            double sx = c[0] == 0 ? 1 : -1, sy = c[1] == 0 ? 1 : -1;
-            for (int k = 0; k < 5; k++) {
-                pt(p, o, rt, up, c[0] + sx * 0.1 * k, c[1], cornerColor, sz * 1.8f);
-                pt(p, o, rt, up, c[0], c[1] + sy * 0.1 * k, cornerColor, sz * 1.8f);
-            }
-            if (particle != Particle.END_ROD)
-                p.getWorld().spawnParticle(Particle.END_ROD, List.of(p), null,
-                        o[0] + rt[0] * c[0] + up[0] * c[1], o[1] + rt[1] * c[0] + up[1] * c[1], o[2] + rt[2] * c[0] + up[2] * c[1],
-                        1, 0, 0, 0, 0, null, true);
-        }
-        // 上辺の外側に大きな矢印 (上 = 画像の上)
-        double cx = W / 2, len = 1.2, head = 0.6;
-        for (double t = 0; t <= 1.0001; t += 0.08) {
-            double y = H + 0.25 + len * t;
-            pt(p, o, rt, up, cx, y, top, sz * 1.5f);
-            if (t > 0.4) {
-                double w = head * (1 - t) * 1.6;
-                pt(p, o, rt, up, cx - w, y - 0.0, top, sz * 1.5f);
-                pt(p, o, rt, up, cx + w, y - 0.0, top, sz * 1.5f);
-            }
-        }
+        for (double[] c : new double[][]{{0, 0}, {W, 0}, {0, H}, {W, H}})
+            for (int k = 0; k < 3; k++) pt(p, o, rt, up, c[0] + (c[0] == 0 ? 0.08 * k : -0.08 * k), c[1] + (c[1] == 0 ? 0.08 * k : -0.08 * k), cornerColor, sz * 1.4f);
+        // 上辺の外側に矢印 (上 = 画像の上)
+        double cx = W / 2;
         for (double t = 0; t <= 1.0001; t += 0.1) {
-            pt(p, o, rt, up, cx - head * t, H + 0.25 + len - head * t * 1.0, top, sz * 1.5f);
-            pt(p, o, rt, up, cx + head * t, H + 0.25 + len - head * t * 1.0, top, sz * 1.5f);
+            pt(p, o, rt, up, cx, H + 0.2 + 0.5 * t, top, sz);
+            pt(p, o, rt, up, cx - 0.35 * (1 - t), H + 0.2 + 0.5 * t - 0.0, top, sz);
+            pt(p, o, rt, up, cx + 0.35 * (1 - t), H + 0.2 + 0.5 * t - 0.0, top, sz);
         }
     }
 
@@ -658,7 +635,129 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         });
         lang.send(p, "placed", "cols", cols, "rows", rows, "count", frames.size(), "id", pid);
         if (bad > 0) lang.send(p, "skipped", "count", bad);
-        effect("place", w, centers);
+        placeEffect(w, face, centers);
+    }
+
+    // ---------- 設置演出 (確定した瞬間) ----------
+    private static Map<String, Object> mp(Object... kv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
+        return m;
+    }
+
+    private static double num(Map<?, ?> m, String k, double d) { return m.get(k) instanceof Number n ? n.doubleValue() : d; }
+
+    private static String str(Map<?, ?> m, String k, String d) { return m.get(k) == null ? d : m.get(k).toString(); }
+
+    private List<Map<?, ?>> mapList(ConfigurationSection s, String key, List<Map<String, Object>> def) {
+        List<Map<?, ?>> l = s.getMapList(key);
+        return l.isEmpty() && !s.isSet(key) ? new ArrayList<>(def) : l;
+    }
+
+    /**
+     * 貼り付け範囲の面に沿って粒子を散らす。外周から中心へ波のように広がり、四隅でバーストする。
+     * 数tickかけて段階的に出し、効果音も時間差で鳴らす。すべて effects.place で調整できる。
+     */
+    void placeEffect(World w, BlockFace face, List<Location> centers) {
+        ConfigurationSection s = getConfig().getConfigurationSection("effects.place");
+        if (s == null) s = new org.bukkit.configuration.MemoryConfiguration();
+        if (!s.getBoolean("enabled", true) || centers.isEmpty()) return;
+        final int dur = Math.max(1, s.getInt("duration-ticks", 24));
+        final int cap = Math.max(1, s.getInt("max-tiles", 96));
+        final double mult = Math.max(0, s.getDouble("count-multiplier", 1.0));
+        final double spread = s.getDouble("spread", 1.0);
+        final int[] n = {face.getModX(), face.getModY(), face.getModZ()};
+
+        double cx = 0, cy = 0, cz = 0;
+        double[] lo = {1e18, 1e18, 1e18}, hi = {-1e18, -1e18, -1e18};
+        for (Location l : centers) {
+            cx += l.getX(); cy += l.getY(); cz += l.getZ();
+            double[] v = {l.getX(), l.getY(), l.getZ()};
+            for (int i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], v[i]); hi[i] = Math.max(hi[i], v[i]); }
+        }
+        final Location mid = new Location(w, cx / centers.size(), cy / centers.size(), cz / centers.size());
+        double maxD = 1e-6;
+        for (Location l : centers) maxD = Math.max(maxD, l.distance(mid));
+
+        // 外周ほど早く、中心ほど遅く (外から中心へ収束する波)
+        final int stride = Math.max(1, (centers.size() + cap - 1) / cap);
+        final List<List<Location>> buckets = new ArrayList<>();
+        for (int i = 0; i < dur; i++) buckets.add(new ArrayList<>());
+        for (int i = 0; i < centers.size(); i += stride) {
+            Location l = centers.get(i);
+            int t = centers.size() == 1 ? 0 : (int) Math.round((1 - l.distance(mid) / maxD) * (dur - 1));
+            buckets.get(Math.max(0, Math.min(dur - 1, t))).add(l);
+        }
+
+        record Layer(Particle p, int count, double speed) {}
+        final List<Layer> layers = new ArrayList<>();
+        for (Map<?, ?> m : mapList(s, "layers", List.of(
+                mp("particle", "END_ROD", "count", 6, "speed", 0.04),
+                mp("particle", "FIREWORK", "count", 4, "speed", 0.05),
+                mp("particle", "GLOW", "count", 3, "speed", 0.02),
+                mp("particle", "ENCHANT", "count", 8, "speed", 0.6),
+                mp("particle", "TOTEM_OF_UNDYING", "count", 2, "speed", 0.15)))) {
+            Particle p = particleOf(str(m, "particle", ""), null);
+            if (p != null && p.getDataType() == Void.class) layers.add(new Layer(p, (int) num(m, "count", 3), num(m, "speed", 0.05)));
+        }
+        final List<Layer> corners = new ArrayList<>();
+        for (Map<?, ?> m : mapList(s, "corner-bursts", List.of(
+                mp("particle", "TOTEM_OF_UNDYING", "count", 30, "speed", 0.4),
+                mp("particle", "END_ROD", "count", 24, "speed", 0.25),
+                mp("particle", "FIREWORK", "count", 16, "speed", 0.2)))) {
+            Particle p = particleOf(str(m, "particle", ""), null);
+            if (p != null && p.getDataType() == Void.class) corners.add(new Layer(p, (int) num(m, "count", 10), num(m, "speed", 0.2)));
+        }
+        final Particle flash = particleOf(s.getString("flash-particle", "EXPLOSION_EMITTER"), null);
+        final int flashCount = s.getInt("flash-count", 1);
+        final List<Map<?, ?>> sounds = mapList(s, "sounds", List.of(
+                mp("sound", "minecraft:entity.firework_rocket.launch", "volume", 1.0, "pitch", 1.0, "delay", 0),
+                mp("sound", "minecraft:block.beacon.activate", "volume", 0.8, "pitch", 1.8, "delay", 0),
+                mp("sound", "minecraft:entity.item_frame.place", "volume", 1.0, "pitch", 1.0, "delay", 0),
+                mp("sound", "minecraft:entity.firework_rocket.blast", "volume", 1.0, "pitch", 1.0, "delay", 8),
+                mp("sound", "minecraft:entity.firework_rocket.twinkle", "volume", 1.0, "pitch", 1.0, "delay", 12),
+                mp("sound", "minecraft:entity.player.levelup", "volume", 0.9, "pitch", 1.2, "delay", dur - 1)));
+
+        // 四隅 (面に沿った2軸の最小・最大)
+        final List<Location> cornerPts = new ArrayList<>();
+        int a1 = -1, a2 = -1;
+        for (int i = 0; i < 3; i++) if (n[i] == 0) { if (a1 < 0) a1 = i; else a2 = i; }
+        if (a1 >= 0 && a2 >= 0) for (int u = 0; u < 2; u++) for (int v = 0; v < 2; v++) {
+            double[] pt = {mid.getX(), mid.getY(), mid.getZ()};
+            pt[a1] = u == 0 ? lo[a1] - 0.5 : hi[a1] + 0.5;
+            pt[a2] = v == 0 ? lo[a2] - 0.5 : hi[a2] + 0.5;
+            cornerPts.add(new Location(w, pt[0], pt[1], pt[2]));
+        }
+        final double[] dd = {n[0] != 0 ? 0.12 : 0.5 * spread, n[1] != 0 ? 0.12 : 0.5 * spread, n[2] != 0 ? 0.12 : 0.5 * spread};
+        final Location soundAt = mid;
+
+        final int[] tick = {0};
+        getServer().getScheduler().runTaskTimer(this, task -> {
+            int t = tick[0]++;
+            if (t == 0) {
+                if (flash != null && flash.getDataType() == Void.class && flashCount > 0) w.spawnParticle(flash, mid, flashCount, 0, 0, 0, 0);
+                for (Location cp : cornerPts) for (Layer ly : corners)
+                    w.spawnParticle(ly.p(), cp, (int) Math.round(ly.count() * mult), 0.15, 0.15, 0.15, ly.speed());
+            }
+            if (t < dur) for (Location l : buckets.get(t)) {
+                Location at = l.clone().subtract(n[0] * 0.3, n[1] * 0.3, n[2] * 0.3);
+                for (Layer ly : layers) {
+                    int c = (int) Math.round(ly.count() * mult);
+                    if (c > 0) w.spawnParticle(ly.p(), at, c, dd[0], dd[1], dd[2], ly.speed());
+                }
+            }
+            for (Map<?, ?> sm : sounds) {
+                if ((int) num(sm, "delay", 0) != t) continue;
+                String name = str(sm, "sound", "");
+                if (!name.isBlank()) w.playSound(soundAt, name, SoundCategory.BLOCKS, (float) num(sm, "volume", 1), (float) num(sm, "pitch", 1));
+            }
+            if (t == dur - 1) {
+                // 最後に四隅をもう一度弾けさせる
+                for (Location cp : cornerPts) for (Layer ly : corners)
+                    w.spawnParticle(ly.p(), cp, (int) Math.round(ly.count() * mult / 2.0), 0.2, 0.2, 0.2, ly.speed());
+            }
+            if (t >= dur) task.cancel();
+        }, 0L, 1L);
     }
 
     /** 貼り付け・撤去の演出 (パーティクルと効果音)。config の effects.<名前> で変更できる */

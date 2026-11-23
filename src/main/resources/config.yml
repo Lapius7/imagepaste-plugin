@@ -36,12 +36,12 @@ download:
   allowed-hosts: []            # 空なら全公開ホスト可。指定すると完全一致またはサブドメインのみ許可
 
 preview:
-  interval-ticks: 3            # 枠の更新間隔 (tick)。小さいほど滑らかだが負荷が増える
+  interval-ticks: 4            # 枠の更新間隔 (tick)。小さいほど滑らかだが負荷が増える
   max-distance: 64             # 見ている面を探す距離 (ブロック)。届かない所でも置ける
   air-click-item: true         # 素手のとき、空中の右クリックを届かせる一時アイテム(紙)を持たせる
   particle: DUST               # 粒子の種類 (DUST 以外は色指定が効きません。例: END_ROD)
-  particle-size: 1.8           # DUST の大きさ
-  edge-step: 0.25              # 粒子の間隔 (ブロック)。小さいほど密
+  particle-size: 1.0           # DUST の大きさ
+  edge-step: 0.5               # 粒子の間隔 (ブロック)。小さいほど密
   edge-color: "#55FFFF"        # 外周の色
   top-color: "#FFFF55"         # 上辺と矢印の色 (画像の上を示す)
   corner-color: "#FFFFFF"      # 四隅の色
@@ -55,23 +55,38 @@ preview:
     bossbar-color: BLUE        # PINK BLUE RED GREEN YELLOW PURPLE WHITE
     bossbar-overlay: PROGRESS  # PROGRESS / NOTCHED_6 / NOTCHED_10 / NOTCHED_12 / NOTCHED_20
 
-# 貼り付け・撤去の演出。enabled: false で無効、particle / sound は空欄で個別に無効
+# 設置演出 (確定した瞬間)。プレビューの枠 (preview.*) とは別の設定です。
+# 貼り付け範囲の面に沿って粒子を散らし、外周から中心へ波のように収束させ、四隅でバーストします。
 effects:
   place:
     enabled: true
-    particle: HAPPY_VILLAGER   # 色指定などが要らない粒子のみ
-    count-per-tile: 12
-    particle2: END_ROD         # 2種類目 (空欄で無効)
-    count-per-tile2: 6
-    speed2: 0.12
-    spread: 0.7
-    max-tiles: 64              # 粒子を出すタイルの上限(多いときは間引く)
-    sound: "minecraft:entity.player.levelup"
-    volume: 1.0
-    pitch: 1.2
-    sound2: "minecraft:entity.item_frame.place"
-    volume2: 1.0
-    pitch2: 1.0
+    duration-ticks: 24         # 演出の長さ (tick。20=1秒)。外周から中心へ、この間に段階的に出る
+    count-multiplier: 1.0      # 粒子数の倍率 (0 で粒子なし、2.0 で倍)
+    spread: 1.0                # タイル面の上での散らばり (1.0 でタイル全面、小さいほど中心寄り)
+    max-tiles: 96              # 粒子を出すタイル数の上限 (多いときは間引く)
+    flash-particle: EXPLOSION_EMITTER  # 最初の閃光 (空欄で無効)
+    flash-count: 1
+    # 面に沿って散らす粒子 (色指定などが要らない粒子のみ)。count はタイルごと
+    layers:
+      - { particle: END_ROD, count: 6, speed: 0.04 }
+      - { particle: FIREWORK, count: 4, speed: 0.05 }
+      - { particle: GLOW, count: 3, speed: 0.02 }
+      - { particle: ENCHANT, count: 8, speed: 0.6 }
+      - { particle: TOTEM_OF_UNDYING, count: 2, speed: 0.15 }
+    # 範囲の四隅で弾ける粒子 (最初と最後の2回)
+    corner-bursts:
+      - { particle: TOTEM_OF_UNDYING, count: 30, speed: 0.4 }
+      - { particle: END_ROD, count: 24, speed: 0.25 }
+      - { particle: FIREWORK, count: 16, speed: 0.2 }
+    # 効果音。delay は開始からの tick。volume / pitch は 1.0 が標準
+    sounds:
+      - { sound: "minecraft:entity.firework_rocket.launch", volume: 1.0, pitch: 1.0, delay: 0 }
+      - { sound: "minecraft:block.beacon.activate", volume: 0.8, pitch: 1.8, delay: 0 }
+      - { sound: "minecraft:entity.item_frame.place", volume: 1.0, pitch: 1.0, delay: 0 }
+      - { sound: "minecraft:entity.firework_rocket.blast", volume: 1.0, pitch: 1.0, delay: 8 }
+      - { sound: "minecraft:entity.firework_rocket.twinkle", volume: 1.0, pitch: 1.0, delay: 12 }
+      - { sound: "minecraft:entity.player.levelup", volume: 0.9, pitch: 1.2, delay: 23 }
+  # 撤去時の演出
   remove:
     enabled: true
     particle: CLOUD
