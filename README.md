@@ -20,6 +20,7 @@
 </p>
 
 <p align="center">
+  <a href="#overview">Overview</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#commands">Commands</a> ·
   <a href="#configuration">Configuration</a> ·
@@ -30,6 +31,8 @@
 </div>
 
 ---
+
+## Overview
 
 Run `/imagepaste <URL>`, look at a surface, and right-click. The image is reduced to map colors and placed as invisible item frames holding maps.
 
