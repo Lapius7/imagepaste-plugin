@@ -46,6 +46,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         long expires;
         double scroll;
         Target last;
+        boolean confirming;
         BossBar bar;
         Scoreboard prevBoard;
         Session(BufferedImage img, Opts o, int maxW, int maxH, int maxTiles) {
@@ -117,7 +118,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
 
     // ---------- 設定 ----------
     private int previewDistance = 64;
-    private double edgeStep = 0.5, dustSize = 1.0;
+    private double edgeStep = 0.25, dustSize = 1.8;
     private Particle particle = Particle.DUST;
     private Color edgeColor, topColor, cornerColor, errorColor;
     private int scrollNotches = 1, scrollStep = 1;
@@ -137,8 +138,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     private void loadCfg() {
         var c = getConfig();
         previewDistance = Math.max(2, c.getInt("preview.max-distance", 64));
-        edgeStep = Math.max(0.1, c.getDouble("preview.edge-step", 0.5));
-        dustSize = c.getDouble("preview.particle-size", 1.0);
+        edgeStep = Math.max(0.1, c.getDouble("preview.edge-step", 0.25));
+        dustSize = c.getDouble("preview.particle-size", 1.8);
         edgeColor = color(c.getString("preview.edge-color", "#55FFFF"), Color.AQUA);
         topColor = color(c.getString("preview.top-color", "#FFFF55"), Color.YELLOW);
         cornerColor = color(c.getString("preview.corner-color", "#FFFFFF"), Color.WHITE);
@@ -154,7 +155,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             onBreak = OnBreak.valueOf(c.getString("protection.on-break", "protect").toUpperCase(Locale.ROOT).replace('-', '_'));
         } catch (IllegalArgumentException e) { onBreak = OnBreak.PROTECT; }
         if (ticker != null) ticker.cancel();
-        ticker = getServer().getScheduler().runTaskTimer(this, this::tick, 10L, Math.max(1, c.getInt("preview.interval-ticks", 4)));
+        ticker = getServer().getScheduler().runTaskTimer(this, this::tick, 10L, Math.max(1, c.getInt("preview.interval-ticks", 3)));
     }
 
     // ---------- プレビュー開始 ----------
@@ -261,6 +262,10 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     // ---------- 操作説明 (ボスバー / スコアボード / チャット) ----------
     private void startGuide(Player p, Session se) {
         List<String> lines = lang.list("guide-lines");
+        if (!guideMode.equals("none") && !guideMode.equals("chat")) {
+            p.sendMessage(lang.c("guide-title"));
+            for (String l : lines) p.sendMessage(lang.parse(l));
+        }
         switch (guideMode) {
             case "bossbar" -> {
                 Component t = Component.empty();
@@ -404,22 +409,45 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         }
         Color main = ok ? edgeColor : errorColor, top = ok ? topColor : errorColor;
         float sz = (float) dustSize;
+        // 外周 (内側にもう1本足して太く見せる)
         for (double x = 0; x <= W + 1e-6; x += edgeStep) {
             pt(p, o, rt, up, x, 0, main, sz);
             pt(p, o, rt, up, x, H, top, sz);
+            pt(p, o, rt, up, x, 0.07, main, sz * 0.8f);
+            pt(p, o, rt, up, x, H - 0.07, top, sz * 0.8f);
         }
         for (double y = edgeStep; y < H - 1e-6; y += edgeStep) {
             pt(p, o, rt, up, 0, y, main, sz);
             pt(p, o, rt, up, W, y, main, sz);
+            pt(p, o, rt, up, 0.07, y, main, sz * 0.8f);
+            pt(p, o, rt, up, W - 0.07, y, main, sz * 0.8f);
         }
-        for (double[] c : new double[][]{{0, 0}, {W, 0}, {0, H}, {W, H}})
-            for (int k = 0; k < 3; k++) pt(p, o, rt, up, c[0] + (c[0] == 0 ? 0.08 * k : -0.08 * k), c[1] + (c[1] == 0 ? 0.08 * k : -0.08 * k), cornerColor, sz * 1.4f);
-        // 上辺の外側に矢印 (上 = 画像の上)
-        double cx = W / 2;
+        // 四隅: 大きい白の塊 + 光る粒
+        for (double[] c : new double[][]{{0, 0}, {W, 0}, {0, H}, {W, H}}) {
+            double sx = c[0] == 0 ? 1 : -1, sy = c[1] == 0 ? 1 : -1;
+            for (int k = 0; k < 5; k++) {
+                pt(p, o, rt, up, c[0] + sx * 0.1 * k, c[1], cornerColor, sz * 1.8f);
+                pt(p, o, rt, up, c[0], c[1] + sy * 0.1 * k, cornerColor, sz * 1.8f);
+            }
+            if (particle != Particle.END_ROD)
+                p.getWorld().spawnParticle(Particle.END_ROD, List.of(p), null,
+                        o[0] + rt[0] * c[0] + up[0] * c[1], o[1] + rt[1] * c[0] + up[1] * c[1], o[2] + rt[2] * c[0] + up[2] * c[1],
+                        1, 0, 0, 0, 0, null, true);
+        }
+        // 上辺の外側に大きな矢印 (上 = 画像の上)
+        double cx = W / 2, len = 1.2, head = 0.6;
+        for (double t = 0; t <= 1.0001; t += 0.08) {
+            double y = H + 0.25 + len * t;
+            pt(p, o, rt, up, cx, y, top, sz * 1.5f);
+            if (t > 0.4) {
+                double w = head * (1 - t) * 1.6;
+                pt(p, o, rt, up, cx - w, y - 0.0, top, sz * 1.5f);
+                pt(p, o, rt, up, cx + w, y - 0.0, top, sz * 1.5f);
+            }
+        }
         for (double t = 0; t <= 1.0001; t += 0.1) {
-            pt(p, o, rt, up, cx, H + 0.2 + 0.5 * t, top, sz);
-            pt(p, o, rt, up, cx - 0.35 * (1 - t), H + 0.2 + 0.5 * t - 0.0, top, sz);
-            pt(p, o, rt, up, cx + 0.35 * (1 - t), H + 0.2 + 0.5 * t - 0.0, top, sz);
+            pt(p, o, rt, up, cx - head * t, H + 0.25 + len - head * t * 1.0, top, sz * 1.5f);
+            pt(p, o, rt, up, cx + head * t, H + 0.25 + len - head * t * 1.0, top, sz * 1.5f);
         }
     }
 
@@ -460,7 +488,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     public void onScroll(PlayerItemHeldEvent e) {
         Player p = e.getPlayer();
         Session se = sessions.get(p.getUniqueId());
-        if (se == null || !p.isSneaking()) return;
+        if (se == null) return;
+        if (!p.isSneaking()) { getServer().getScheduler().runTask(this, () -> { if (sessions.containsKey(p.getUniqueId())) ensureMarker(p); }); return; }
         e.setCancelled(true);
         int d = Math.floorMod(e.getNewSlot() - e.getPreviousSlot() + 4, 9) - 4;
         se.scroll += (invertScroll ? d : -d);
@@ -513,8 +542,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         refresh(p, se);
         Target t = se.last;
         if (t == null) { lang.send(p, "look-at-block"); return; }
-        if (!sessions.remove(p.getUniqueId(), se)) return;
-        sessions.put(p.getUniqueId(), se); // 変換が終わるまで表示は維持
+        if (se.confirming) return;
+        se.confirming = true;
         final UUID id = p.getUniqueId();
         lang.send(p, "processing");
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
@@ -635,21 +664,25 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     /** 貼り付け・撤去の演出 (パーティクルと効果音)。config の effects.<名前> で変更できる */
     void effect(String name, World w, List<Location> centers) {
         ConfigurationSection s = getConfig().getConfigurationSection("effects." + name);
-        if (s == null || !s.getBoolean("enabled", true) || centers.isEmpty()) return;
-        Particle pt = particleOf(s.getString("particle", "HAPPY_VILLAGER"), null);
-        int count = Math.max(0, s.getInt("count-per-tile", 3));
-        double spread = s.getDouble("spread", 0.3);
+        if (s == null) { s = new org.bukkit.configuration.MemoryConfiguration(); s.set("particle", "HAPPY_VILLAGER"); s.set("count-per-tile", 8); s.set("sound", name.equals("place") ? "minecraft:entity.player.levelup" : "minecraft:entity.item_frame.remove_item"); }
+        if (!s.getBoolean("enabled", true) || centers.isEmpty()) return;
         int cap = Math.max(1, s.getInt("max-tiles", 64));
-        if (pt != null && count > 0 && pt.getDataType() == Void.class) {
-            int stride = Math.max(1, (centers.size() + cap - 1) / cap);
-            for (int i = 0; i < centers.size(); i += stride) w.spawnParticle(pt, centers.get(i), count, spread, spread, spread, 0.02);
+        int stride = Math.max(1, (centers.size() + cap - 1) / cap);
+        double spread = s.getDouble("spread", 0.6);
+        for (String suffix : new String[]{"", "2"}) {
+            Particle pt = particleOf(s.getString("particle" + suffix, suffix.isEmpty() ? "HAPPY_VILLAGER" : ""), null);
+            int count = Math.max(0, s.getInt("count-per-tile" + suffix, suffix.isEmpty() ? 8 : 0));
+            double speed = s.getDouble("speed" + suffix, 0.05);
+            if (pt == null || count == 0 || pt.getDataType() != Void.class) continue;
+            for (int i = 0; i < centers.size(); i += stride) w.spawnParticle(pt, centers.get(i), count, spread, spread, spread, speed);
         }
-        String sound = s.getString("sound", "");
-        if (sound != null && !sound.isBlank()) {
-            double x = 0, y = 0, z = 0;
-            for (Location l : centers) { x += l.getX(); y += l.getY(); z += l.getZ(); }
-            Location c = new Location(w, x / centers.size(), y / centers.size(), z / centers.size());
-            w.playSound(c, sound, SoundCategory.BLOCKS, (float) s.getDouble("volume", 1.0), (float) s.getDouble("pitch", 1.0));
+        double x = 0, y = 0, z = 0;
+        for (Location l : centers) { x += l.getX(); y += l.getY(); z += l.getZ(); }
+        Location c = new Location(w, x / centers.size(), y / centers.size(), z / centers.size());
+        for (String suffix : new String[]{"", "2"}) {
+            String sound = s.getString("sound" + suffix, "");
+            if (sound == null || sound.isBlank()) continue;
+            w.playSound(c, sound, SoundCategory.BLOCKS, (float) s.getDouble("volume" + suffix, 1.0), (float) s.getDouble("pitch" + suffix, 1.0));
         }
     }
 
@@ -660,6 +693,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         if (!spot.getWorld().getNearbyEntities(spot.getBoundingBox().expand(-0.01), x -> x instanceof Hanging).isEmpty()) return false;
         return true;
     }
+
 
     // ---------- 削除・破損の整合 ----------
     /** 貼り付け全体を撤去する (額縁・記録・地図データ)。ドロップは出さない */

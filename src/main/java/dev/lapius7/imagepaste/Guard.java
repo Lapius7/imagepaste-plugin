@@ -15,7 +15,7 @@ import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.hanging.HangingBreakEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
-import org.bukkit.event.player.PlayerItemFrameChangeEvent;
+import io.papermc.paper.event.player.PlayerItemFrameChangeEvent;
 import org.bukkit.event.world.EntitiesLoadEvent;
 import org.bukkit.persistence.PersistentDataType;
 
@@ -96,11 +96,8 @@ final class Guard implements Listener {
     public void onRemove(EntityRemoveEvent e) {
         if (!(e.getEntity() instanceof ItemFrame)) return;
         switch (e.getCause()) {
-            case PLUGIN, UNLOAD, PLAYER_QUIT, TRANSFORMATION, ENTER_BLOCK, PORTAL, MERGE, DEATH, DROP, EXPLODE, DESPAWN, PICKUP -> {
-                if (!(e.getCause() == EntityRemoveEvent.Cause.DEATH || e.getCause() == EntityRemoveEvent.Cause.EXPLODE
-                        || e.getCause() == EntityRemoveEvent.Cause.DESPAWN)) return;
-            }
-            default -> {}
+            case DEATH, EXPLODE, DESPAWN, HIT, OUT_OF_WORLD, DROP, PICKUP, ENTER_BLOCK, TRANSFORMATION, MERGE -> {}
+            default -> { return; }
         }
         if (pl.store.byFrame(e.getEntity().getUniqueId()) != null) pl.frameLost(e.getEntity().getUniqueId());
     }
