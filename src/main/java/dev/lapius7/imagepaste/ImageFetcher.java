@@ -102,7 +102,7 @@ public final class ImageFetcher {
             try {
                 r.setInput(iis, true, true);
                 long w = r.getWidth(0), h = r.getHeight(0);
-                if (w * h > maxPixels || w > 20000 || h > 20000) throw new FetchException("画像の解像度が大きすぎます");
+                if ((maxPixels > 0 && (long) w * h > maxPixels) || (maxPixels > 0 && (w > 20000 || h > 20000))) throw new FetchException("画像の解像度が大きすぎます");
                 BufferedImage img = r.read(0);
                 if (img == null) throw new FetchException("画像を読めません");
                 return img;

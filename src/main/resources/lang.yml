@@ -27,6 +27,9 @@ cancelled: "<yellow>貼り付けを中止しました。"
 expired: "<yellow>時間切れでプレビューを終了しました。"
 blocked: "<red>置き場所が埋まっているため中止しました <gray>(置けない枠: <count>)"
 skipped: "<yellow><count>枠は置けないため飛ばしました。"
+placing: "<gray>貼り付けを開始します (<white><total></white>枚)。中止は <white>/imagepaste cancel"
+progress: "<aqua>貼り付け中 <white><done></white>/<white><total></white> <gray>(<percent>%)"
+place-cancelled: "<yellow>貼り付けを中止し、置いた分を片付けました。"
 placed: "<green>貼り付けました <gray>(<cols>x<rows>タイル / 地図<count>枚 / ID <white><id></white>)<newline><gray>取り消し: <click:run_command:'/imagepaste remove <id>'><hover:show_text:'<gray>クリックで削除'><aqua>[削除]</aqua></hover></click>"
 
 # ---- プレビューの表示 ----

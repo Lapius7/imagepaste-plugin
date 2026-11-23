@@ -19,21 +19,27 @@ defaults:
   on-blocked: abort     # 置き場所が埋まっているとき abort(全体中止) / skip(その枠だけ飛ばす)
 
 limits:
-  max-width: 16
-  max-height: 16
-  max-tiles: 128               # 1回の貼り付けの最大タイル(地図)数
+  # 0 以下は無制限。個別の上限は権限 imagepaste.max-tiles.<数> / imagepaste.max-size.<数> でも設定できる
+  max-width: 0
+  max-height: 0
+  max-tiles: 0                 # 1回の貼り付けの最大タイル(地図)数。0 = 無制限 (内部の安全上限は 262144)
   cooldown-seconds: 10         # 同一プレイヤーの連続実行の間隔
   pending-timeout-seconds: 120 # プレビュー中、操作がないまま待てる時間
 
 download:
   max-bytes: 10485760          # 取得サイズ上限 (10MiB)
-  max-source-pixels: 40000000  # 元画像の画素数上限
+  max-source-pixels: 40000000  # 元画像の画素数上限。0 以下で無制限
   connect-timeout-seconds: 5
   timeout-seconds: 15
   max-redirects: 3
   max-concurrent: 3            # 同時に取得できる数
   allowed-ports: [80, 443]
   allowed-hosts: []            # 空なら全公開ホスト可。指定すると完全一致またはサブドメインのみ許可
+
+# 貼り付けの進め方。額縁と地図は複数tickに分けて作り、進捗をアクションバーに出す (/imagepaste cancel で中止して片付ける)
+place:
+  tiles-per-tick: 16           # 1tickに作るタイル数。0 で一度に全部
+  load-chunks: true            # false なら読み込み済みチャンクの範囲だけに置く (未ロードの所は置けない扱い)
 
 preview:
   interval-ticks: 4            # 枠の更新間隔 (tick)。小さいほど滑らかだが負荷が増える

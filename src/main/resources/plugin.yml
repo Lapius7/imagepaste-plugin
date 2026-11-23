@@ -22,3 +22,6 @@ permissions:
   imagepaste.break:
     description: 保護された貼り付けの額縁を壊す (config の protection.allow-break-permission)
     default: op
+  imagepaste.max-tiles.*:
+    description: 個別のタイル数上限は imagepaste.max-tiles.<数> のように権限ノードで付ける (config の limits より小さくなる)
+    default: false

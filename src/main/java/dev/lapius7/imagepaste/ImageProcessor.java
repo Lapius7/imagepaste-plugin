@@ -68,7 +68,7 @@ public final class ImageProcessor {
 
     /** 画像サイズと設定から {横タイル数, 縦タイル数} を決める (純粋関数) */
     public static int[] dims(int iw, int ih, Opts o, int maxW, int maxH) {
-        int cols = Math.max(1, Math.min(o.width, maxW));
+        int cols = Math.max(1, Math.min(o.width, maxW <= 0 ? Integer.MAX_VALUE : maxW));
         int rows;
         if (o.height > 0) rows = Math.min(o.height, maxH);
         else rows = (int) Math.max(1, Math.min(maxH, Math.ceil(cols * (double) ih / iw)));
@@ -81,7 +81,8 @@ public final class ImageProcessor {
         int iw = src.getWidth(), ih = src.getHeight();
         int[] dm = dims(iw, ih, o, maxW, maxH);
         int cols = dm[0], rows = dm[1];
-        if (cols * rows > maxTiles) throw new IllegalArgumentException("タイル数が上限(" + maxTiles + ")を超えます: " + cols + "x" + rows);
+        if ((long) cols * rows > 262144L) throw new IllegalArgumentException("タイル数が多すぎます (最大 262144)");
+        if (maxTiles > 0 && (long) cols * rows > maxTiles) throw new IllegalArgumentException("タイル数が上限(" + maxTiles + ")を超えます: " + cols + "x" + rows);
 
         int pw = cols * TILE, ph = rows * TILE;
         int[] argb = new int[iw * ih];
@@ -111,38 +112,63 @@ public final class ImageProcessor {
 
         int bgRgb = o.background == null ? 0 : o.background;
         boolean transparentBg = o.background == null;
-        float[] r = new float[pw * ph], g = new float[pw * ph], b = new float[pw * ph];
-        boolean[] clear = new boolean[pw * ph];
+        final double sx = iw / dw, sy = ih / dh;
+        final int fw = iw, fh = ih;
+        final int[] src2 = argb;
 
-        double sx = iw / dw, sy = ih / dh;
+        // 1行ずつ処理する (大きな画像でも float 配列は数行分だけ)。Floyd-Steinberg は次の行にだけ誤差を渡す
+        float[][] R = new float[2][pw], G = new float[2][pw], B = new float[2][pw];
+        boolean[][] C = new boolean[2][pw];
+        byte[][] tiles = new byte[cols * rows][TILE * TILE];
+        boolean floyd = o.dither.equals("floyd");
+        fillRow(0, pw, src2, fw, fh, sx, sy, dx, dy, transparentBg, bgRgb, o, R[0], G[0], B[0], C[0]);
         for (int y = 0; y < ph; y++) {
+            int c = y & 1, n = c ^ 1;
+            if (y + 1 < ph) fillRow(y + 1, pw, src2, fw, fh, sx, sy, dx, dy, transparentBg, bgRgb, o, R[n], G[n], B[n], C[n]);
+            float[] r = R[c], g = G[c], b = B[c]; boolean[] cl = C[c];
+            int ty = y / TILE, py = y % TILE;
             for (int x = 0; x < pw; x++) {
-                int i = y * pw + x;
-                double u = (x + 0.5 - dx) * sx, v = (y + 0.5 - dy) * sy;
-                double[] px = null;
-                if (u >= 0 && v >= 0 && u < iw && v < ih) px = sample(argb, iw, ih, u, v, o.resample);
-                double a = px == null ? 0 : px[3];
-                double pr = px == null ? 0 : px[0], pg = px == null ? 0 : px[1], pb = px == null ? 0 : px[2];
-                if (a < 0.5 && transparentBg) { clear[i] = true; continue; }
-                double br = (bgRgb >> 16) & 0xff, bgc = (bgRgb >> 8) & 0xff, bb = bgRgb & 0xff;
-                if (transparentBg) { a = 1; br = bgc = bb = 0; }
-                double rr = pr * a + br * (1 - a), gg = pg * a + bgc * (1 - a), bl = pb * a + bb * (1 - a);
-                double[] adj = adjust(rr, gg, bl, o);
-                r[i] = (float) adj[0]; g[i] = (float) adj[1]; b[i] = (float) adj[2];
+                byte idx;
+                if (cl[x]) idx = 0;
+                else if (floyd) {
+                    int cr = (int) clamp(r[x]), cg = (int) clamp(g[x]), cb = (int) clamp(b[x]);
+                    int k = nearest(cr, cg, cb);
+                    idx = (byte) k;
+                    int pc = paletteRgbFast(k);
+                    float er = cr - ((pc >> 16) & 0xff), eg = cg - ((pc >> 8) & 0xff), eb = cb - (pc & 0xff);
+                    if (x + 1 < pw && !cl[x + 1]) { r[x + 1] += er * 7 / 16f; g[x + 1] += eg * 7 / 16f; b[x + 1] += eb * 7 / 16f; }
+                    if (y + 1 < ph) {
+                        float[] nr = R[n], ng = G[n], nb = B[n]; boolean[] nc = C[n];
+                        if (x > 0 && !nc[x - 1]) { nr[x - 1] += er * 3 / 16f; ng[x - 1] += eg * 3 / 16f; nb[x - 1] += eb * 3 / 16f; }
+                        if (!nc[x]) { nr[x] += er * 5 / 16f; ng[x] += eg * 5 / 16f; nb[x] += eb * 5 / 16f; }
+                        if (x + 1 < pw && !nc[x + 1]) { nr[x + 1] += er / 16f; ng[x + 1] += eg / 16f; nb[x + 1] += eb / 16f; }
+                    }
+                } else if (o.dither.equals("ordered")) {
+                    float t = (BAYER[y & 7][x & 7] / 64f - 0.5f) * 40f;
+                    idx = (byte) nearest((int) clamp(r[x] + t), (int) clamp(g[x] + t), (int) clamp(b[x] + t));
+                } else idx = (byte) nearest((int) clamp(r[x]), (int) clamp(g[x]), (int) clamp(b[x]));
+                tiles[ty * cols + x / TILE][py * TILE + x % TILE] = idx;
             }
         }
-
-        byte[] out = new byte[pw * ph];
-        quantize(out, r, g, b, clear, pw, ph, o.dither);
-
-        byte[][] tiles = new byte[cols * rows][TILE * TILE];
-        for (int ty = 0; ty < rows; ty++)
-            for (int tx = 0; tx < cols; tx++) {
-                byte[] t = tiles[ty * cols + tx];
-                for (int y = 0; y < TILE; y++)
-                    System.arraycopy(out, (ty * TILE + y) * pw + tx * TILE, t, y * TILE, TILE);
-            }
         return new Result(cols, rows, tiles);
+    }
+
+    private static void fillRow(int y, int pw, int[] argb, int iw, int ih, double sx, double sy, double dx, double dy,
+                                boolean transparentBg, int bgRgb, Opts o, float[] r, float[] g, float[] b, boolean[] clear) {
+        for (int x = 0; x < pw; x++) {
+            double u = (x + 0.5 - dx) * sx, v = (y + 0.5 - dy) * sy;
+            double[] px = null;
+            if (u >= 0 && v >= 0 && u < iw && v < ih) px = sample(argb, iw, ih, u, v, o.resample);
+            double a = px == null ? 0 : px[3];
+            double pr = px == null ? 0 : px[0], pg = px == null ? 0 : px[1], pb = px == null ? 0 : px[2];
+            if (a < 0.5 && transparentBg) { clear[x] = true; continue; }
+            clear[x] = false;
+            double br = (bgRgb >> 16) & 0xff, bgc = (bgRgb >> 8) & 0xff, bb = bgRgb & 0xff;
+            if (transparentBg) { a = 1; br = bgc = bb = 0; }
+            double rr = pr * a + br * (1 - a), gg = pg * a + bgc * (1 - a), bl = pb * a + bb * (1 - a);
+            double[] adj = adjust(rr, gg, bl, o);
+            r[x] = (float) adj[0]; g[x] = (float) adj[1]; b[x] = (float) adj[2];
+        }
     }
 
     private static double[] adjust(double r, double g, double b, Opts o) {

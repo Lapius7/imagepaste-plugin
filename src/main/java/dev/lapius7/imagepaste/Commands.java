@@ -40,6 +40,7 @@ final class Commands implements CommandExecutor, TabCompleter {
             case "confirm" -> { if (s instanceof Player p) { var se = pl.sessions.get(p.getUniqueId()); if (se == null) lang.send(s, "nothing-pending"); else pl.confirm(p, se); } else lang.send(s, "players-only"); }
             case "cancel" -> {
                 if (!(s instanceof Player p)) { lang.send(s, "players-only"); return true; }
+                if (pl.cancelJob(p.getUniqueId())) return true;
                 if (pl.sessions.containsKey(p.getUniqueId())) { pl.endSession(p.getUniqueId()); lang.send(s, "cancelled"); }
                 else lang.send(s, "nothing-pending");
             }

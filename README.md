@@ -75,6 +75,15 @@
   - `count-multiplier`: 粒子数の倍率 (0 で粒子なし)、`enabled: false` で演出ごと無効
 - **撤去演出** (`effects.remove`): 粒子1種と音1つ。
 
+## 大きな画像・タイル数
+
+- `limits.max-width` `max-height` `max-tiles` と `download.max-source-pixels` は 0 以下で無制限です (既定は無制限)。内部の安全上限は 262144 タイルです。
+- 人ごとの上限は権限で付けます: `imagepaste.max-tiles.<数>` `imagepaste.max-size.<数>` (持っている中で最大のもの。config の上限より大きくはなりません)。`imagepaste.bypass` は上限なしです。
+- 額縁と地図は `place.tiles-per-tick` ずつ複数tickに分けて作り、進捗をアクションバーに出します。`/imagepaste cancel` で中止すると置いた分を片付けます。
+- 画像の変換は非同期で、1行ずつ処理します (大きな画像でも作業用メモリは数行分)。
+- 未ロードのチャンクはロードしながら置きます。`place.load-chunks: false` にすると読み込み済みの範囲だけになります。
+- 保存: 各タイルのピクセルは `plugins/ImagePaste/` に自前で保存し、描画時に読みます。ただし Bukkit の仕様で地図1枚ごとに `map_N.dat` も作られるため、数千枚規模ではワールドの容量が増えます。
+
 ## 権限
 
 | 権限 | 内容 | 既定 |

@@ -183,6 +183,21 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         return true;
     }
 
+    /** 0以下は無制限 */
+    private static int unl(int v) { return v <= 0 ? Integer.MAX_VALUE : v; }
+
+    /** imagepaste.max-tiles.N のような権限のうち、最も大きい N (なければ 0) */
+    private static int permLimit(Player p, String prefix) {
+        int best = 0;
+        for (var pe : p.getEffectivePermissions()) {
+            String n = pe.getPermission();
+            if (pe.getValue() && n.startsWith(prefix)) {
+                try { best = Math.max(best, Integer.parseInt(n.substring(prefix.length()))); } catch (NumberFormatException ignored) {}
+            }
+        }
+        return best;
+    }
+
     void startPaste(Player p, String[] a) {
         boolean bypass = p.hasPermission("imagepaste.bypass");
         String url = a[0];
@@ -193,9 +208,13 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             String err = Opts.set(o, a[i].substring(0, eq), a[i].substring(eq + 1));
             if (err != null) { lang.send(p, "bad-option", "opt", err); return; }
         }
-        int maxW = getConfig().getInt("limits.max-width", 16), maxH = getConfig().getInt("limits.max-height", 16);
-        int maxTiles = getConfig().getInt("limits.max-tiles", 128);
-        if (bypass) { maxW = maxH = 64; maxTiles = Integer.MAX_VALUE; }
+        int maxW = unl(getConfig().getInt("limits.max-width", 0)), maxH = unl(getConfig().getInt("limits.max-height", 0));
+        int maxTiles = unl(getConfig().getInt("limits.max-tiles", 0));
+        int perm = permLimit(p, "imagepaste.max-tiles.");
+        if (perm > 0) maxTiles = Math.min(maxTiles, perm);
+        int permW = permLimit(p, "imagepaste.max-size.");
+        if (permW > 0) { maxW = Math.min(maxW, permW); maxH = Math.min(maxH, permW); }
+        if (bypass) { maxW = maxH = Integer.MAX_VALUE; maxTiles = Integer.MAX_VALUE; }
         if (o.width > maxW || o.height > maxH) { lang.send(p, "too-large", "maxw", maxW, "maxh", maxH); return; }
         long cd = getConfig().getLong("limits.cooldown-seconds", 10) * 1000;
         long now = System.currentTimeMillis();
@@ -590,6 +609,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         World w = clicked.getWorld();
         Block base = clicked.getRelative(face);
         boolean skip = o.blocked.equals("skip");
+        boolean loadChunks = getConfig().getBoolean("place.load-chunks", true);
         List<int[]> cells = new ArrayList<>(); // c, r
         int bad = 0;
         for (int row = 0; row < rows; row++)
@@ -597,45 +617,87 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
                 Layout.Tile lt = Layout.tile(fv, look, rq, cols, rows, col, row);
                 Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
                 Block back = spot.getRelative(face.getOppositeFace());
+                if (!loadChunks && !w.isChunkLoaded(spot.getX() >> 4, spot.getZ() >> 4)) { bad++; continue; }
                 if (!canHang(spot, back, face)) { bad++; continue; }
                 cells.add(new int[]{col, row});
             }
         if ((bad > 0 && !skip) || cells.isEmpty()) { lang.send(p, "blocked", "count", bad); return; }
 
         String pid = store.newId();
-        List<Store.Frame> frames = new ArrayList<>();
-        List<int[]> placed = new ArrayList<>();
-        List<Location> centers = new ArrayList<>();
-        try {
-            for (int[] cell : cells) {
-                int col = cell[0], row = cell[1];
-                byte[] px = r.tiles()[row * cols + col];
-                MapView view = Bukkit.createMap(w);
-                view.getRenderers().forEach(view::removeRenderer);
-                view.setTrackingPosition(false);
-                view.setUnlimitedTracking(false);
-                view.addRenderer(new TileRenderer(store, view.getId(), px));
-                Layout.Tile lt = Layout.tile(fv, look, rq, cols, rows, col, row);
-                Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
-                ItemFrame fr = spawnFrame(w, spot, face, lt.rotation(), o.glow, o.invisible, o.fixed, mapItem(view), pid);
-                frames.add(new Store.Frame(fr.getUniqueId(), spot.getX(), spot.getY(), spot.getZ(), view.getId(), face.name(), lt.rotation()));
-                placed.add(new int[]{view.getId(), row * cols + col});
-                centers.add(spot.getLocation().add(0.5, 0.5, 0.5).add(face.getModX() * 0.4, face.getModY() * 0.4, face.getModZ() * 0.4));
+        final int perTick = getConfig().getInt("place.tiles-per-tick", 16);
+        final int batch = perTick <= 0 ? Integer.MAX_VALUE : perTick;
+        final List<Store.Frame> frames = new ArrayList<>();
+        final List<Location> centers = new ArrayList<>();
+        final byte[][] tiles = r.tiles();
+        final UUID owner = p.getUniqueId();
+        final String ownerName = p.getName();
+        final int badF = bad, total = cells.size();
+        final Job job = new Job();
+        jobs.put(owner, job);
+        lang.send(p, "placing", "total", total);
+
+        getServer().getScheduler().runTaskTimer(this, task -> {
+            Player pl = getServer().getPlayer(owner);
+            boolean fail = false;
+            try {
+                for (int n = 0; n < batch && job.next < total && !job.cancelled; n++) {
+                    int[] cell = cells.get(job.next++);
+                    int col = cell[0], row = cell[1];
+                    byte[] px = tiles[row * cols + col];
+                    MapView view = Bukkit.createMap(w);
+                    view.getRenderers().forEach(view::removeRenderer);
+                    view.setTrackingPosition(false);
+                    view.setUnlimitedTracking(false);
+                    view.addRenderer(new TileRenderer(store, view.getId(), px));
+                    Layout.Tile lt = Layout.tile(fv, look, rq, cols, rows, col, row);
+                    Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
+                    ItemFrame fr = spawnFrame(w, spot, face, lt.rotation(), o.glow, o.invisible, o.fixed, mapItem(view), pid);
+                    frames.add(new Store.Frame(fr.getUniqueId(), spot.getX(), spot.getY(), spot.getZ(), view.getId(), face.name(), lt.rotation()));
+                    centers.add(spot.getLocation().add(0.5, 0.5, 0.5).add(face.getModX() * 0.4, face.getModY() * 0.4, face.getModZ() * 0.4));
+                    final int mid = view.getId();
+                    getServer().getScheduler().runTaskAsynchronously(this, () -> store.saveTile(mid, px));
+                }
+            } catch (RuntimeException ex) {
+                getLogger().warning("貼り付け失敗: " + ex);
+                fail = true;
             }
-        } catch (RuntimeException ex) {
-            for (Store.Frame f : frames) { Entity en = Bukkit.getEntity(f.uuid()); if (en != null) en.remove(); }
-            throw ex;
-        }
-        Store.Paste paste = new Store.Paste(pid, p.getUniqueId(), p.getName(), w.getName(), System.currentTimeMillis(), cols, rows, frames,
-                o.invisible, o.glow, o.fixed);
-        store.add(paste);
-        byte[][] tiles = r.tiles();
-        getServer().getScheduler().runTaskAsynchronously(this, () -> {
-            for (int[] pl : placed) store.saveTile(pl[0], tiles[pl[1]]);
-        });
-        lang.send(p, "placed", "cols", cols, "rows", rows, "count", frames.size(), "id", pid);
-        if (bad > 0) lang.send(p, "skipped", "count", bad);
-        placeEffect(w, face, centers);
+            if (fail || job.cancelled) {
+                task.cancel();
+                jobs.remove(owner, job);
+                for (Store.Frame f : frames) { Entity en = Bukkit.getEntity(f.uuid()); if (en != null) en.remove(); }
+                if (pl != null) {
+                    pl.sendActionBar(Component.empty());
+                    lang.send(pl, fail ? "error" : "place-cancelled", "reason", "内部エラー");
+                }
+                return;
+            }
+            if (job.next < total) {
+                if (pl != null) pl.sendActionBar(lang.c("progress", "done", job.next, "total", total, "percent", job.next * 100 / total));
+                return;
+            }
+            task.cancel();
+            jobs.remove(owner, job);
+            store.add(new Store.Paste(pid, owner, ownerName, w.getName(), System.currentTimeMillis(), cols, rows, frames,
+                    o.invisible, o.glow, o.fixed));
+            if (pl != null) {
+                pl.sendActionBar(Component.empty());
+                lang.send(pl, "placed", "cols", cols, "rows", rows, "count", frames.size(), "id", pid);
+                if (badF > 0) lang.send(pl, "skipped", "count", badF);
+            }
+            placeEffect(w, face, centers);
+        }, 0L, 1L);
+    }
+
+    /** 実行中の貼り付け (複数tickに分けて進める) */
+    static final class Job { volatile boolean cancelled; int next; }
+    final Map<UUID, Job> jobs = new ConcurrentHashMap<>();
+
+    /** 実行中の貼り付けを中止する。あれば true */
+    boolean cancelJob(UUID id) {
+        Job j = jobs.get(id);
+        if (j == null) return false;
+        j.cancelled = true;
+        return true;
     }
 
     // ---------- 設置演出 (確定した瞬間) ----------
