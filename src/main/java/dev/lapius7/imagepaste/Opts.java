@@ -7,7 +7,7 @@ import java.util.Locale;
 
 /** 貼り付け1回分の設定。config.yml の defaults を元に、コマンド引数で上書きする。 */
 public final class Opts {
-    public static final List<String> KEYS = List.of("width", "height", "mode", "quality", "resample", "dither",
+    public static final List<String> KEYS = java.util.Arrays.asList("width", "height", "mode", "quality", "resample", "dither",
             "brightness", "contrast", "saturation", "background", "rotate", "flip", "invisible", "glow", "fixed", "blocked");
 
     public int width = 4, height = 0, rotate = 0;
@@ -41,10 +41,10 @@ public final class Opts {
         String err = set(o, "background", bg);
         if (err != null) o.background = null;
         // 不正な設定値は既定値に戻す
-        if (!List.of("fit", "fill", "stretch").contains(o.mode)) o.mode = "fit";
-        if (!List.of("nearest", "bilinear", "bicubic").contains(o.resample)) o.resample = "bicubic";
-        if (!List.of("none", "floyd", "ordered").contains(o.dither)) o.dither = "floyd";
-        if (!List.of("abort", "skip").contains(o.blocked)) o.blocked = "abort";
+        if (!java.util.Arrays.asList("fit", "fill", "stretch").contains(o.mode)) o.mode = "fit";
+        if (!java.util.Arrays.asList("nearest", "bilinear", "bicubic").contains(o.resample)) o.resample = "bicubic";
+        if (!java.util.Arrays.asList("none", "floyd", "ordered").contains(o.dither)) o.dither = "floyd";
+        if (!java.util.Arrays.asList("abort", "skip").contains(o.blocked)) o.blocked = "abort";
         if (o.rotate % 90 != 0) o.rotate = 0;
         o.rotate = ((o.rotate % 360) + 360) % 360;
         return o;
@@ -64,9 +64,9 @@ public final class Opts {
             switch (key.toLowerCase(Locale.ROOT)) {
                 case "width", "w" -> { o.width = Integer.parseInt(v); if (o.width < 1) return "width は1以上"; }
                 case "height", "h" -> { o.height = Integer.parseInt(v); if (o.height < 0) return "height は0以上"; }
-                case "mode" -> { if (!List.of("fit", "fill", "stretch").contains(v)) return "mode は fit/fill/stretch"; o.mode = v; }
-                case "resample" -> { if (!List.of("nearest", "bilinear", "bicubic").contains(v)) return "resample は nearest/bilinear/bicubic"; o.resample = v; }
-                case "dither" -> { if (!List.of("none", "floyd", "ordered").contains(v)) return "dither は none/floyd/ordered"; o.dither = v; }
+                case "mode" -> { if (!java.util.Arrays.asList("fit", "fill", "stretch").contains(v)) return "mode は fit/fill/stretch"; o.mode = v; }
+                case "resample" -> { if (!java.util.Arrays.asList("nearest", "bilinear", "bicubic").contains(v)) return "resample は nearest/bilinear/bicubic"; o.resample = v; }
+                case "dither" -> { if (!java.util.Arrays.asList("none", "floyd", "ordered").contains(v)) return "dither は none/floyd/ordered"; o.dither = v; }
                 case "quality" -> {
                     switch (v) {
                         case "low" -> { o.resample = "nearest"; o.dither = "none"; }
@@ -103,7 +103,7 @@ public final class Opts {
                 case "invisible" -> o.invisible = bool(v);
                 case "glow" -> o.glow = bool(v);
                 case "fixed" -> o.fixed = bool(v);
-                case "blocked" -> { if (!List.of("abort", "skip").contains(v)) return "blocked は abort/skip"; o.blocked = v; }
+                case "blocked" -> { if (!java.util.Arrays.asList("abort", "skip").contains(v)) return "blocked は abort/skip"; o.blocked = v; }
                 default -> { return "不明な項目: " + key; }
             }
         } catch (NumberFormatException e) {
@@ -120,19 +120,19 @@ public final class Opts {
 
     public static List<String> valuesFor(String key) {
         return switch (key) {
-            case "mode" -> List.of("fit", "fill", "stretch");
-            case "resample" -> List.of("nearest", "bilinear", "bicubic");
-            case "dither" -> List.of("none", "floyd", "ordered");
-            case "quality" -> List.of("low", "normal", "high");
-            case "rotate" -> List.of("0", "90", "180", "270");
-            case "flip" -> List.of("none", "h", "v", "both");
-            case "background" -> List.of("transparent", "#FFFFFF", "#000000");
-            case "invisible", "glow", "fixed" -> List.of("true", "false");
-            case "blocked" -> List.of("abort", "skip");
-            case "width", "height" -> List.of("1", "2", "4", "8");
-            case "brightness" -> List.of("-0.2", "0", "0.2");
-            case "contrast", "saturation" -> List.of("0.8", "1", "1.2");
-            default -> List.of();
+            case "mode" -> java.util.Arrays.asList("fit", "fill", "stretch");
+            case "resample" -> java.util.Arrays.asList("nearest", "bilinear", "bicubic");
+            case "dither" -> java.util.Arrays.asList("none", "floyd", "ordered");
+            case "quality" -> java.util.Arrays.asList("low", "normal", "high");
+            case "rotate" -> java.util.Arrays.asList("0", "90", "180", "270");
+            case "flip" -> java.util.Arrays.asList("none", "h", "v", "both");
+            case "background" -> java.util.Arrays.asList("transparent", "#FFFFFF", "#000000");
+            case "invisible", "glow", "fixed" -> java.util.Arrays.asList("true", "false");
+            case "blocked" -> java.util.Arrays.asList("abort", "skip");
+            case "width", "height" -> java.util.Arrays.asList("1", "2", "4", "8");
+            case "brightness" -> java.util.Arrays.asList("-0.2", "0", "0.2");
+            case "contrast", "saturation" -> java.util.Arrays.asList("0.8", "1", "1.2");
+            default -> java.util.Arrays.asList();
         };
     }
 }

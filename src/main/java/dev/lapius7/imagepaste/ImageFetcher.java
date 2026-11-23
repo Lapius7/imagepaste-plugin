@@ -11,9 +11,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.*;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Iterator;
 import java.util.List;
@@ -36,52 +33,51 @@ public final class ImageFetcher {
         connectSec = c.getInt("connect-timeout-seconds", 5);
         timeoutSec = c.getInt("timeout-seconds", 15);
         maxRedirects = c.getInt("max-redirects", 3);
-        ports = c.getIntegerList("allowed-ports").isEmpty() ? List.of(80, 443) : c.getIntegerList("allowed-ports");
-        hosts = c.getStringList("allowed-hosts").stream().map(s -> s.toLowerCase(Locale.ROOT)).toList();
+        ports = c.getIntegerList("allowed-ports").isEmpty() ? java.util.Arrays.asList(80, 443) : c.getIntegerList("allowed-ports");
+        hosts = c.getStringList("allowed-hosts").stream().map(s -> s.toLowerCase(Locale.ROOT)).collect(java.util.stream.Collectors.toList());
         ImageIO.setUseCache(false);
     }
 
     public BufferedImage fetch(String url) throws FetchException {
         URI uri = parse(url);
-        HttpClient client = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .proxy(ProxySelector.of(null))
-                .connectTimeout(Duration.ofSeconds(connectSec))
-                .build();
         long deadline = System.nanoTime() + Duration.ofSeconds(timeoutSec).toNanos();
         try {
             for (int hop = 0; hop <= maxRedirects; hop++) {
                 check(uri);
                 long left = deadline - System.nanoTime();
                 if (left <= 0) throw new FetchException("タイムアウト");
-                HttpRequest req = HttpRequest.newBuilder(uri).GET()
-                        .timeout(Duration.ofNanos(left))
-                        .header("User-Agent", "ImagePaste/0.1")
-                        .header("Accept", "image/*").build();
-                HttpResponse<InputStream> res = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
-                int code = res.statusCode();
-                if (code >= 300 && code < 400 && code != 304) {
-                    res.body().close();
-                    String loc = res.headers().firstValue("Location").orElseThrow(() -> new FetchException("リダイレクト先が不明"));
-                    try { uri = uri.resolve(loc); } catch (IllegalArgumentException e) { throw new FetchException("リダイレクト先が不正"); }
-                    continue;
+                // Java 8 でも動くよう HttpURLConnection を使う。リダイレクトは自前で辿り、各ホップで check する
+                HttpURLConnection con = (HttpURLConnection) uri.toURL().openConnection(Proxy.NO_PROXY);
+                try {
+                    con.setInstanceFollowRedirects(false);
+                    con.setRequestMethod("GET");
+                    con.setConnectTimeout((int) Math.min(Duration.ofSeconds(connectSec).toMillis(), Integer.MAX_VALUE));
+                    con.setReadTimeout((int) Math.max(1, Math.min(Duration.ofNanos(left).toMillis(), Integer.MAX_VALUE)));
+                    con.setRequestProperty("User-Agent", "ImagePaste/0.1");
+                    con.setRequestProperty("Accept", "image/*");
+                    int code = con.getResponseCode();
+                    if (code >= 300 && code < 400 && code != 304) {
+                        String loc = con.getHeaderField("Location");
+                        if (loc == null) throw new FetchException("リダイレクト先が不明");
+                        try { uri = uri.resolve(loc); } catch (IllegalArgumentException e) { throw new FetchException("リダイレクト先が不正"); }
+                        continue;
+                    }
+                    if (code != 200) throw new FetchException("HTTP " + code);
+                    long len = con.getContentLengthLong();
+                    if (len > maxBytes) throw new FetchException("ファイルが大きすぎます");
+                    return decode(readLimited(con.getInputStream(), deadline));
+                } finally {
+                    con.disconnect();
                 }
-                if (code != 200) { res.body().close(); throw new FetchException("HTTP " + code); }
-                long len = res.headers().firstValueAsLong("Content-Length").orElse(-1);
-                if (len > maxBytes) { res.body().close(); throw new FetchException("ファイルが大きすぎます"); }
-                return decode(readLimited(res.body(), deadline));
             }
             throw new FetchException("リダイレクトが多すぎます");
         } catch (IOException e) {
             throw new FetchException("通信エラー: " + e.getClass().getSimpleName());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new FetchException("中断されました");
         }
     }
 
     private byte[] readLimited(InputStream in, long deadline) throws IOException, FetchException {
-        try (in) {
+        try (InputStream ignored = in) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[16384];
             int n;

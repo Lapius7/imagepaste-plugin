@@ -11,6 +11,7 @@ import java.util.List;
 public final class ImageProcessor {
     public static final int TILE = 128;
 
+    @com.github.bsideup.jabel.Desugar
     public record Result(int cols, int rows, byte[][] tiles) {}
 
     // --- パレット ---

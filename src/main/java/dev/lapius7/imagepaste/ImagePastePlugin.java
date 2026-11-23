@@ -35,6 +35,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ImagePastePlugin extends JavaPlugin implements Listener {
     /** プレビューが狙っている場所 */
+    @com.github.bsideup.jabel.Desugar
+    record Layer(Particle p, int count, double speed) {}
+
+    @com.github.bsideup.jabel.Desugar
     record Target(Block block, BlockFace face, int[] look) {}
 
     /** プレビュー中の1人分の状態 */
@@ -88,6 +92,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(guard, this);
         guard.registerRemoveListener();
+        guard.registerOptionalEvents();
         PluginCommand cmd = Objects.requireNonNull(getCommand("imagepaste"));
         Commands c = new Commands(this);
         cmd.setExecutor(c);
@@ -449,9 +454,9 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     private void spawn(Player p, double x, double y, double z, Color col, float size) {
         Location l = new Location(p.getWorld(), x, y, z);
         if (particle == Compat.dust())
-            p.getWorld().spawnParticle(particle, List.of(p), null, x, y, z, 1, 0, 0, 0, 0, new Particle.DustOptions(col, size), true);
+            p.getWorld().spawnParticle(particle, java.util.Arrays.asList(p), null, x, y, z, 1, 0, 0, 0, 0, new Particle.DustOptions(col, size), true);
         else if (particle.getDataType() == Void.class)
-            p.getWorld().spawnParticle(particle, List.of(p), null, x, y, z, 1, 0, 0, 0, 0, null, true);
+            p.getWorld().spawnParticle(particle, java.util.Arrays.asList(p), null, x, y, z, 1, 0, 0, 0, 0, null, true);
     }
 
     private void tick() {
@@ -706,7 +711,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
 
     private ItemFrame spawnFrame(World w, Block spot, BlockFace face, int steps, boolean glow, boolean invisible, boolean fixed,
                                  ItemStack item, String pid) {
-        Class<? extends ItemFrame> type = glow ? GlowItemFrame.class : ItemFrame.class;
+        Class<? extends ItemFrame> type = glow ? Compat.glowFrameType() : ItemFrame.class;
         return w.spawn(spot.getLocation(), type, ent -> {
             ent.setFacingDirection(face, true);
             ent.setVisible(!invisible);
@@ -875,7 +880,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         switch (pc.getString("display", "bossbar").toLowerCase(Locale.ROOT)) {
             case "actionbar" -> p.sendActionBar(line);
             case "title" -> p.showTitle(net.kyori.adventure.title.Title.title(Component.empty(), line,
-                    net.kyori.adventure.title.Title.Times.times(java.time.Duration.ZERO, java.time.Duration.ofMillis(1500), java.time.Duration.ZERO)));
+                    Compat.titleTimes(0, 1500, 0)));
             case "none" -> {}
             default -> {
                 if (j.bar == null) {
@@ -958,9 +963,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             buckets.get(Math.max(0, Math.min(dur - 1, t))).add(l);
         }
 
-        record Layer(Particle p, int count, double speed) {}
         final List<Layer> layers = new ArrayList<>();
-        for (Map<?, ?> m : mapList(s, "layers", List.of(
+        for (Map<?, ?> m : mapList(s, "layers", java.util.Arrays.asList(
                 mp("particle", "END_ROD", "count", 6, "speed", 0.04),
                 mp("particle", "FIREWORK", "count", 4, "speed", 0.05),
                 mp("particle", "GLOW", "count", 3, "speed", 0.02),
@@ -970,7 +974,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             if (p != null && p.getDataType() == Void.class) layers.add(new Layer(p, (int) num(m, "count", 3), num(m, "speed", 0.05)));
         }
         final List<Layer> corners = new ArrayList<>();
-        for (Map<?, ?> m : mapList(s, "corner-bursts", List.of(
+        for (Map<?, ?> m : mapList(s, "corner-bursts", java.util.Arrays.asList(
                 mp("particle", "TOTEM_OF_UNDYING", "count", 30, "speed", 0.4),
                 mp("particle", "END_ROD", "count", 24, "speed", 0.25),
                 mp("particle", "FIREWORK", "count", 16, "speed", 0.2)))) {
@@ -979,7 +983,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         }
         final Particle flash = particleOf(s.getString("flash-particle", "EXPLOSION_EMITTER"), null);
         final int flashCount = s.getInt("flash-count", 1);
-        final List<Map<?, ?>> sounds = mapList(s, "sounds", List.of(
+        final List<Map<?, ?>> sounds = mapList(s, "sounds", java.util.Arrays.asList(
                 mp("sound", "minecraft:entity.firework_rocket.launch", "volume", 1.0, "pitch", 1.0, "delay", 0),
                 mp("sound", "minecraft:block.beacon.activate", "volume", 0.8, "pitch", 1.8, "delay", 0),
                 mp("sound", "minecraft:entity.item_frame.place", "volume", 1.0, "pitch", 1.0, "delay", 0),
@@ -1018,7 +1022,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             for (Map<?, ?> sm : sounds) {
                 if ((int) num(sm, "delay", 0) != t) continue;
                 String name = str(sm, "sound", "");
-                if (!name.isBlank()) w.playSound(soundAt, name, SoundCategory.BLOCKS, (float) num(sm, "volume", 1), (float) num(sm, "pitch", 1));
+                if (!name.trim().isEmpty()) w.playSound(soundAt, name, SoundCategory.BLOCKS, (float) num(sm, "volume", 1), (float) num(sm, "pitch", 1));
             }
             if (t == dur - 1) {
                 // 最後に四隅をもう一度弾けさせる
@@ -1049,7 +1053,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         Location c = new Location(w, x / centers.size(), y / centers.size(), z / centers.size());
         for (String suffix : new String[]{"", "2"}) {
             String sound = s.getString("sound" + suffix, "");
-            if (sound == null || sound.isBlank()) continue;
+            if (sound == null || sound.trim().isEmpty()) continue;
             w.playSound(c, sound, SoundCategory.BLOCKS, (float) s.getDouble("volume" + suffix, 1.0), (float) s.getDouble("pitch" + suffix, 1.0));
         }
     }

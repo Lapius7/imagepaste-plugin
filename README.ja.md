@@ -12,9 +12,9 @@
 
 <p align="center">
   <a href="https://github.com/Lapius7/imagepaste-plugin/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Lapius7/imagepaste-plugin?label=release&style=flat-square&color=e8833a&logo=github"></a>
-  <img alt="Minecraft 1.18.2 〜 26.3" src="https://img.shields.io/badge/Minecraft-1.18.2%20~%2026.3-62b47a?style=flat-square">
+  <img alt="Minecraft 1.16.5 〜 26.3" src="https://img.shields.io/badge/Minecraft-1.16.5%20~%2026.3-62b47a?style=flat-square">
   <img alt="Paper 必須" src="https://img.shields.io/badge/Paper-%E5%BF%85%E9%A0%88-0a6cff?style=flat-square">
-  <img alt="Java 17+" src="https://img.shields.io/badge/Java-17%2B-f89820?style=flat-square&logo=openjdk&logoColor=white">
+  <img alt="Java 8+" src="https://img.shields.io/badge/Java-8%2B-f89820?style=flat-square&logo=openjdk&logoColor=white">
   <a href="https://github.com/Lapius7/imagepaste-plugin/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Lapius7/imagepaste-plugin?style=flat-square&color=e3b341&logo=github"></a>
   <a href="https://github.com/Lapius7/imagepaste-plugin/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/Lapius7/imagepaste-plugin?style=flat-square&color=3b82f6"></a>
 </p>
@@ -53,7 +53,7 @@
 
 ## クイックスタート
 
-Paper サーバー(1.18.2〜26.3)と、その Minecraft 版が要求する Java が必要です。
+Paper サーバー(1.16.5〜26.3)と、その Minecraft 版が要求する Java が必要です。
 
 1. [Releases](https://github.com/Lapius7/imagepaste-plugin/releases/latest) から `ImagePaste-<版>.jar` をダウンロードします。
 2. サーバーの `plugins/` に入れて起動します。`plugins/ImagePaste/` に `config.yml` と `lang.yml` が作られます。
@@ -203,7 +203,9 @@ Paper サーバー(1.18.2〜26.3)と、その Minecraft 版が要求する Java 
 
 ## 対応バージョン
 
-1 つの jar で Paper 1.18.2〜26.3 に対応します。Paper 1.18.2 の API に対して Java 17 でコンパイルし、新しい版にだけある API は実行時に調べて使います。サーバー側は、各 Minecraft 版が要求する Java が必要です(1.18〜1.20.4 は 17 以上、1.20.5 以降は 21 以上、26.x は 25)。
+1 つの jar で Paper 1.16.5〜26.3 に対応します。Paper 1.16.5 の API に対して Java 8 のバイトコードでコンパイルし、新しい版にだけある API は実行時に調べて使います。サーバー側は、各 Minecraft 版が要求する Java が必要です(1.16.5 は 8 以上、1.18〜1.20.4 は 17 以上、1.20.5 以降は 21 以上、26.x は 25)。
+
+1.16.5 には発光額縁が無いため、通常の額縁を使います。1.12.2 は対象外です。Adventure も永続データ(PDC)も無く、地図とブロック種別の API も別物で、別実装が要るためです。
 
 **Spigot / CraftBukkit では動きません。** メッセージに Paper 同梱の Adventure(MiniMessage)を使っているためです。
 
@@ -212,6 +214,8 @@ Paper サーバー(1.18.2〜26.3)と、その Minecraft 版が要求する Java 
 
 | 版 | ロード・起動 | 貼り付け〜undo |
 |---|---|---|
+| 1.16.5(Java 8) | 確認済み | 確認済み |
+| 1.16.5(Java 11) | 確認済み | 確認済み |
 | 1.18.2 | 確認済み | 確認済み |
 | 1.19.4 | 確認済み | 確認済み |
 | 1.20.1 | 確認済み | 確認済み |
@@ -222,20 +226,21 @@ Paper サーバー(1.18.2〜26.3)と、その Minecraft 版が要求する Java 
 | 1.21.11 | 確認済み | 確認済み |
 | 26.1.2 | 確認済み | 未検証 |
 | 26.2 | 確認済み | 未検証 |
-| 26.3 | 確認済み | 未検証 |
-| 1.17 以前 | 対象外 | - |
+| 26.3 | 確認済み | 確認済み(オーナーが実クライアントで確認) |
+| 1.17.x | 未検証(同じ jar で動く見込み) | - |
+| 1.12.2 以前 | 対象外 | - |
 
 - **ロード・起動**: その版の Paper サーバーに jar を入れて起動し、`Enabling ImagePaste` と読み込み完了のログが出て、エラーがないことを見ています。
-- **貼り付け〜undo**: ヘッドレスのボット(mineflayer)で入室し、`/imagepaste <URL> width=2` を実行して壁を見て右クリックし、額縁 4 個が出現することを確かめています。続けて `list` を見て、`undo` で額縁が 0 個に戻るところまで確認しました。26.x はボット側がまだ対応しておらず、この手順を回せていません。
+- **貼り付け〜undo**: ヘッドレスのボット(mineflayer)で入室し、`/imagepaste <URL> width=2` を実行して壁を見て右クリックし、額縁 4 個が出現することを確かめています。続けて `list` を見て、`undo` で額縁が 0 個に戻るところまで確認しました。26.x はボット側がまだ対応していないため、26.3 はオーナーが実クライアントで手動確認しました。26.1.2 と 26.2 は回せていません。
 
 </details>
 
 > [!NOTE]
-> 未検証: 実クライアントでの操作(スクロール・`F`・`Q`・右クリック)と見た目、Folia。1.17 以前は対象外です。
+> 未検証: 実クライアントでの操作(スクロール・`F`・`Q`・右クリック)と見た目、Folia。1.12.2 以前は対象外です。
 
 ## 開発
 
-Java 17 以上と Gradle が必要です。
+JDK 17 以上と Gradle が必要です。jar 自体は Java 8 向けです(構文は Jabel で下げています)。
 
 ```sh
 gradle build
@@ -243,6 +248,17 @@ gradle build
 
 `build/libs/ImagePaste-<版>.jar` ができます。
 
+## Modrinth への公開
+
+`v*` タグを push すると、`.github/workflows/modrinth.yml` が jar を Modrinth へ公開します。版名はタグ名、変更履歴は GitHub Release の本文を使います。下の設定をしていなければ、ジョブは失敗せず skip されます。
+
+1. [Modrinth](https://modrinth.com/) でプロジェクトを作り、プロジェクト ID を控えます。
+2. 「Create versions」権限のパーソナルアクセストークンを発行します(Settings > Personal access tokens)。
+3. GitHub リポジトリの設定で、secret `MODRINTH_TOKEN`(トークン)と variable `MODRINTH_PROJECT_ID`(プロジェクト ID)を追加します。
+4. 先に Release を作成します(`gh release create vX.Y.Z ...`)。ワークフローがその本文を取り込みます。
+
+ワークフローの対応ゲームバージョンは、上の表で確認済みの版だけです。確認が増えたら編集してください。
+
 ## ライセンス
 
-ライセンスファイルは、まだ置いていません。
+[MIT](LICENSE)

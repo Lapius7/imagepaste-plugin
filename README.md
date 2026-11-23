@@ -12,9 +12,9 @@
 
 <p align="center">
   <a href="https://github.com/Lapius7/imagepaste-plugin/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Lapius7/imagepaste-plugin?label=release&style=flat-square&color=e8833a&logo=github"></a>
-  <img alt="Minecraft 1.18.2 to 26.3" src="https://img.shields.io/badge/Minecraft-1.18.2%20~%2026.3-62b47a?style=flat-square">
+  <img alt="Minecraft 1.16.5 to 26.3" src="https://img.shields.io/badge/Minecraft-1.16.5%20~%2026.3-62b47a?style=flat-square">
   <img alt="Paper required" src="https://img.shields.io/badge/Paper-required-0a6cff?style=flat-square">
-  <img alt="Java 17+" src="https://img.shields.io/badge/Java-17%2B-f89820?style=flat-square&logo=openjdk&logoColor=white">
+  <img alt="Java 8+" src="https://img.shields.io/badge/Java-8%2B-f89820?style=flat-square&logo=openjdk&logoColor=white">
   <a href="https://github.com/Lapius7/imagepaste-plugin/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Lapius7/imagepaste-plugin?style=flat-square&color=e3b341&logo=github"></a>
   <a href="https://github.com/Lapius7/imagepaste-plugin/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/Lapius7/imagepaste-plugin?style=flat-square&color=3b82f6"></a>
 </p>
@@ -53,7 +53,7 @@ Run `/imagepaste <URL>`, look at a surface, and right-click. The image is reduce
 
 ## Quick start
 
-You need a Paper server (1.18.2 to 26.3) running the Java version that Minecraft release requires.
+You need a Paper server (1.16.5 to 26.3) running the Java version that Minecraft release requires.
 
 1. Download `ImagePaste-<version>.jar` from [Releases](https://github.com/Lapius7/imagepaste-plugin/releases/latest).
 2. Put it in `plugins/` and start the server. `config.yml` and `lang.yml` are created under `plugins/ImagePaste/`.
@@ -203,7 +203,9 @@ Particle names accept both new (`DUST`, `EXPLOSION_EMITTER`) and old (`REDSTONE`
 
 ## Supported versions
 
-One jar covers Paper 1.18.2 to 26.3. It is compiled for Java 17 against the Paper 1.18.2 API, and newer APIs are looked up at runtime. The server needs the Java version its Minecraft release requires (17+ for 1.18 to 1.20.4, 21+ from 1.20.5, 25 for 26.x).
+One jar covers Paper 1.16.5 to 26.3. It is compiled to Java 8 bytecode against the Paper 1.16.5 API, and newer APIs are looked up at runtime. The server needs the Java version its Minecraft release requires (8+ for 1.16.5, 17+ for 1.18 to 1.20.4, 21+ from 1.20.5, 25 for 26.x).
+
+On 1.16.5 there is no glow item frame, so normal item frames are used. 1.12.2 is not supported: it has no Adventure, no persistent data container, and a different map and material API, so it would need a separate rewrite.
 
 **Spigot and CraftBukkit are not supported.** Messages use Adventure (MiniMessage) bundled with Paper.
 
@@ -212,6 +214,8 @@ One jar covers Paper 1.18.2 to 26.3. It is compiled for Java 17 against the Pape
 
 | Version | Loads and starts | Paste to undo |
 |---|---|---|
+| 1.16.5 (Java 8) | Verified | Verified |
+| 1.16.5 (Java 11) | Verified | Verified |
 | 1.18.2 | Verified | Verified |
 | 1.19.4 | Verified | Verified |
 | 1.20.1 | Verified | Verified |
@@ -222,20 +226,21 @@ One jar covers Paper 1.18.2 to 26.3. It is compiled for Java 17 against the Pape
 | 1.21.11 | Verified | Verified |
 | 26.1.2 | Verified | Not verified |
 | 26.2 | Verified | Not verified |
-| 26.3 | Verified | Not verified |
-| 1.17 and older | Not supported | - |
+| 26.3 | Verified | Verified (by the owner on a real client) |
+| 1.17.x | Not tested (should work as the same jar) | - |
+| 1.12.2 and older | Not supported | - |
 
 - **Loads and starts**: the jar was put on that version's Paper server, and the log showed `Enabling ImagePaste` and finished loading with no errors.
-- **Paste to undo**: a headless bot (mineflayer) joined, ran `/imagepaste <URL> width=2`, looked at a wall and right-clicked, and 4 item frames appeared. `list` showed it, and `undo` brought the count back to 0. The bot does not support 26.x yet, so this was not run there.
+- **Paste to undo**: a headless bot (mineflayer) joined, ran `/imagepaste <URL> width=2`, looked at a wall and right-clicked, and 4 item frames appeared. `list` showed it, and `undo` brought the count back to 0. The bot does not support 26.x yet, so on 26.3 the owner checked it by hand on a real client; 26.1.2 and 26.2 were not run.
 
 </details>
 
 > [!NOTE]
-> Not verified: the client-side controls (scroll, `F`, `Q`, right-click) and their look on a real client, and Folia. 1.17 and older are not supported.
+> Not verified: the client-side controls (scroll, `F`, `Q`, right-click) and their look on a real client, and Folia. 1.12.2 and older are not supported.
 
 ## Development
 
-Needs Java 17+ and Gradle.
+Needs JDK 17+ and Gradle. The jar itself targets Java 8 (syntax is down-leveled with Jabel).
 
 ```sh
 gradle build
@@ -243,6 +248,17 @@ gradle build
 
 The jar is written to `build/libs/ImagePaste-<version>.jar`.
 
+## Publishing to Modrinth
+
+Pushing a `v*` tag publishes the jar to Modrinth through `.github/workflows/modrinth.yml`. The version name is the tag, and the changelog is the GitHub Release body. Without the setup below, the job is skipped and does not fail.
+
+1. Create a project on [Modrinth](https://modrinth.com/) and note its project ID.
+2. Create a personal access token with the "Create versions" scope (Settings > Personal access tokens).
+3. In the GitHub repository settings, add the secret `MODRINTH_TOKEN` (the token) and the variable `MODRINTH_PROJECT_ID` (the project ID).
+4. Create the release first (`gh release create vX.Y.Z ...`), then the workflow picks up its body.
+
+The game versions in the workflow list only the versions marked Verified above. Edit them when you verify more.
+
 ## License
 
-No license file has been added yet.
+[MIT](LICENSE)

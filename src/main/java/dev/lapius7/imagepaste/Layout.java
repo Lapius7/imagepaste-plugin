@@ -8,6 +8,7 @@ public final class Layout {
     private Layout() {}
 
     /** 基準ブロック(左下)からのオフセットと、額縁の回転 (0..3 = 時計回り 0/90/180/270 度) */
+    @com.github.bsideup.jabel.Desugar
     public record Tile(int dx, int dy, int dz, int rotation) {}
 
     public static int[] cross(int[] a, int[] b) {
@@ -40,6 +41,7 @@ public final class Layout {
     }
 
     /** 貼り付け範囲の外接ブロック箱 (両端を含む) */
+    @com.github.bsideup.jabel.Desugar
     public record Box(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {}
 
     /** 基準ブロックからのオフセットで表した外接箱 */

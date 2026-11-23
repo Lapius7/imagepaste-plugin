@@ -14,6 +14,7 @@ import java.util.zip.GZIPOutputStream;
 /** 貼り付けの記録 (placements.yml) と、地図タイルのピクセル (tiles/ID.bin.gz) を保存する。 */
 public final class Store {
     /** face / rot は再生成に使う (旧データは null / 0) */
+    @com.github.bsideup.jabel.Desugar
     public record Frame(UUID uuid, int x, int y, int z, int mapId, String face, int rot) {
         public Frame(UUID uuid, int x, int y, int z, int mapId) { this(uuid, x, y, z, mapId, null, 0); }
         public Frame withUuid(UUID u) { return new Frame(u, x, y, z, mapId, face, rot); }
@@ -201,7 +202,10 @@ public final class Store {
         Path f = tileFile(mapId);
         if (!Files.exists(f)) return null;
         try (InputStream i = new GZIPInputStream(Files.newInputStream(f))) {
-            byte[] b = i.readAllBytes();
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            for (int n; (n = i.read(buf)) > 0; ) bo.write(buf, 0, n);
+            byte[] b = bo.toByteArray();
             return b.length == ImageProcessor.TILE * ImageProcessor.TILE ? b : null;
         } catch (IOException e) {
             return null;

@@ -15,7 +15,7 @@ import java.util.*;
 
 /** /imagepaste (別名 /ip) の処理と tab 補完 */
 final class Commands implements CommandExecutor, TabCompleter {
-    private static final List<String> SUBS = List.of("help", "list", "undo", "remove", "tp", "size", "rotate", "flip", "confirm", "cancel", "reload");
+    private static final List<String> SUBS = java.util.Arrays.asList("help", "list", "undo", "remove", "tp", "size", "rotate", "flip", "confirm", "cancel", "reload");
     private final ImagePastePlugin pl;
     private final Lang lang;
 
@@ -201,7 +201,7 @@ final class Commands implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender s, Command c, String label, String[] a) {
-        if (!s.hasPermission("imagepaste.use")) return List.of();
+        if (!s.hasPermission("imagepaste.use")) return java.util.Arrays.asList();
         if (a.length == 1) {
             List<String> l = new ArrayList<>(SUBS);
             if (!admin(s)) l.remove("reload");
@@ -211,7 +211,7 @@ final class Commands implements CommandExecutor, TabCompleter {
         String sub = a[0].toLowerCase(Locale.ROOT);
         String cur = a[a.length - 1];
         switch (sub) {
-            case "remove", "tp" -> { return a.length == 2 ? match(ids(s), cur) : List.of(); }
+            case "remove", "tp" -> { return a.length == 2 ? match(ids(s), cur) : java.util.Arrays.asList(); }
             case "list" -> {
                 List<String> l = new ArrayList<>();
                 if (admin(s)) l.add("all");
@@ -219,13 +219,13 @@ final class Commands implements CommandExecutor, TabCompleter {
                 for (int i = 1; i <= Math.min(n, 9); i++) l.add(String.valueOf(i));
                 return match(l, cur);
             }
-            case "size" -> { return a.length <= 3 ? match(List.of("2", "4", "6", "8", "12", "16"), cur) : List.of(); }
-            case "rotate" -> { return a.length == 2 ? match(List.of("0", "90", "180", "270"), cur) : List.of(); }
-            case "flip" -> { return a.length == 2 ? match(List.of("none", "h", "v", "both"), cur) : List.of(); }
-            case "help", "undo", "confirm", "cancel", "reload" -> { return List.of(); }
+            case "size" -> { return a.length <= 3 ? match(java.util.Arrays.asList("2", "4", "6", "8", "12", "16"), cur) : java.util.Arrays.asList(); }
+            case "rotate" -> { return a.length == 2 ? match(java.util.Arrays.asList("0", "90", "180", "270"), cur) : java.util.Arrays.asList(); }
+            case "flip" -> { return a.length == 2 ? match(java.util.Arrays.asList("none", "h", "v", "both"), cur) : java.util.Arrays.asList(); }
+            case "help", "undo", "confirm", "cancel", "reload" -> { return java.util.Arrays.asList(); }
             default -> {}
         }
-        if (!a[0].contains("://")) return List.of();
+        if (!a[0].contains("://")) return java.util.Arrays.asList();
         int eq = cur.indexOf('=');
         if (eq < 0) {
             List<String> keys = new ArrayList<>();
@@ -234,17 +234,17 @@ final class Commands implements CommandExecutor, TabCompleter {
         }
         String key = cur.substring(0, eq).toLowerCase(Locale.ROOT), val = cur.substring(eq + 1);
         List<String> vals = switch (key) {
-            case "mode" -> List.of("fit", "fill", "stretch");
-            case "quality" -> List.of("low", "normal", "high");
-            case "resample" -> List.of("nearest", "bilinear", "bicubic");
-            case "dither" -> List.of("none", "floyd", "ordered");
-            case "rotate" -> List.of("0", "90", "180", "270");
-            case "flip" -> List.of("none", "h", "v", "both");
-            case "invisible", "glow", "fixed" -> List.of("true", "false");
-            case "blocked" -> List.of("abort", "skip");
-            case "background" -> List.of("transparent", "#000000", "#ffffff");
-            case "width", "height" -> List.of("2", "4", "6", "8", "12", "16");
-            default -> List.of();
+            case "mode" -> java.util.Arrays.asList("fit", "fill", "stretch");
+            case "quality" -> java.util.Arrays.asList("low", "normal", "high");
+            case "resample" -> java.util.Arrays.asList("nearest", "bilinear", "bicubic");
+            case "dither" -> java.util.Arrays.asList("none", "floyd", "ordered");
+            case "rotate" -> java.util.Arrays.asList("0", "90", "180", "270");
+            case "flip" -> java.util.Arrays.asList("none", "h", "v", "both");
+            case "invisible", "glow", "fixed" -> java.util.Arrays.asList("true", "false");
+            case "blocked" -> java.util.Arrays.asList("abort", "skip");
+            case "background" -> java.util.Arrays.asList("transparent", "#000000", "#ffffff");
+            case "width", "height" -> java.util.Arrays.asList("2", "4", "6", "8", "12", "16");
+            default -> java.util.Arrays.asList();
         };
         List<String> r = new ArrayList<>();
         for (String v : match(vals, val)) r.add(key + "=" + v);

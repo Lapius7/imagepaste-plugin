@@ -1,0 +1,83 @@
+name: Modrinth
+
+# Publishes the jar to Modrinth when a v* tag is pushed.
+# Needs the secret MODRINTH_TOKEN and the repository variable MODRINTH_PROJECT_ID.
+# If either is missing, the job is skipped instead of failing.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+      MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -n "$MODRINTH_TOKEN" ] && [ -n "$MODRINTH_PROJECT_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::MODRINTH_TOKEN or MODRINTH_PROJECT_ID is not set. Skipping."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
+
+      - uses: actions/setup-java@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          gradle-version: "9.1.0"
+
+      - name: Build
+        if: steps.cfg.outputs.ready == 'true'
+        run: gradle build -x test --no-daemon
+
+      - name: Reuse the GitHub Release body as the changelog
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            if gh release view "$GITHUB_REF_NAME" --json body --jq .body > changelog.md 2>/dev/null; then break; fi
+            sleep 10
+          done
+          [ -s changelog.md ] || echo "Release $GITHUB_REF_NAME" > changelog.md
+
+      - name: Publish to Modrinth
+        if: steps.cfg.outputs.ready == 'true'
+        uses: Kir-Antipov/mc-publish@v3.3.0
+        with:
+          modrinth-id: ${{ env.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ env.MODRINTH_TOKEN }}
+          files: build/libs/ImagePaste-*.jar
+          name: ${{ github.ref_name }}
+          version: ${{ github.ref_name }}
+          version-type: release
+          changelog-file: changelog.md
+          loaders: paper
+          game-versions: |
+            1.16.5
+            1.18.2
+            1.19.4
+            1.20.1
+            1.20.4
+            1.20.6
+            1.21.1
+            1.21.4
+            1.21.11
+            26.1.2
+            26.2
+            26.3

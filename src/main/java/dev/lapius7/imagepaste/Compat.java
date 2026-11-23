@@ -43,7 +43,7 @@ final class Compat {
 
     /** 名前からパーティクルを探す。新旧の別名も試し、なければ def */
     static Particle particle(String name, Particle def) {
-        if (name == null || name.isBlank()) return def;
+        if (name == null || name.trim().isEmpty()) return def;
         String n = name.trim().toUpperCase(Locale.ROOT);
         if (n.startsWith("MINECRAFT:")) n = n.substring(10);
         for (String cand : new String[]{n, ALIAS.get(n)}) {
@@ -98,5 +98,30 @@ final class Compat {
         // 同じ文字列の行が重ならないよう、見えない色コードを末尾に付ける
         s += "§" + Integer.toHexString(index % 16) + "§r";
         ob.getScore(s).setScore(score);
+    }
+
+    // ---------- 新しい版にだけある型 ----------
+    /** 発光額縁 (1.17+)。無い版では通常の額縁にする */
+    @SuppressWarnings("unchecked")
+    static Class<? extends org.bukkit.entity.ItemFrame> glowFrameType() {
+        try {
+            return (Class<? extends org.bukkit.entity.ItemFrame>) Class.forName("org.bukkit.entity.GlowItemFrame");
+        } catch (ClassNotFoundException e) {
+            return org.bukkit.entity.ItemFrame.class;
+        }
+    }
+
+    /** タイトルの表示時間。adventure の版で作り方が違う (古い版は of、新しい版は times) */
+    static net.kyori.adventure.title.Title.Times titleTimes(long fadeInMs, long stayMs, long fadeOutMs) {
+        java.time.Duration[] d = {java.time.Duration.ofMillis(fadeInMs), java.time.Duration.ofMillis(stayMs), java.time.Duration.ofMillis(fadeOutMs)};
+        for (String n : new String[]{"times", "of"}) {
+            try {
+                return (net.kyori.adventure.title.Title.Times) net.kyori.adventure.title.Title.Times.class
+                        .getMethod(n, java.time.Duration.class, java.time.Duration.class, java.time.Duration.class)
+                        .invoke(null, (Object[]) d);
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        throw new IllegalStateException("Title.Times を作れません");
     }
 }
