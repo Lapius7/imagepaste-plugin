@@ -226,12 +226,12 @@ On 1.16.5 there is no glow item frame, so normal item frames are used. 1.12.2 is
 | 1.21.11 | Verified | Verified |
 | 26.1.2 | Verified | Not verified |
 | 26.2 | Verified | Not verified |
-| 26.3 | Verified | Verified (by the owner on a real client) |
+| 26.3 | Verified | Verified (by the author on a real client) |
 | 1.17.x | Not tested (should work as the same jar) | - |
 | 1.12.2 and older | Not supported | - |
 
 - **Loads and starts**: the jar was put on that version's Paper server, and the log showed `Enabling ImagePaste` and finished loading with no errors.
-- **Paste to undo**: a headless bot (mineflayer) joined, ran `/imagepaste <URL> width=2`, looked at a wall and right-clicked, and 4 item frames appeared. `list` showed it, and `undo` brought the count back to 0. The bot does not support 26.x yet, so on 26.3 the owner checked it by hand on a real client; 26.1.2 and 26.2 were not run.
+- **Paste to undo**: a headless bot (mineflayer) joined, ran `/imagepaste <URL> width=2`, looked at a wall and right-clicked, and 4 item frames appeared. `list` showed it, and `undo` brought the count back to 0. The bot does not support 26.x yet, so on 26.3 the author checked it by hand on a real client; 26.1.2 and 26.2 were not run.
 
 </details>
 
