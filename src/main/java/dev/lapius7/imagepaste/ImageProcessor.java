@@ -76,7 +76,18 @@ public final class ImageProcessor {
     }
 
     // --- 本体 ---
+    /** 中止されたとき投げる */
+    public static final class Cancelled extends RuntimeException {
+        public Cancelled() { super("cancelled", null, false, false); }
+    }
+
     public static Result process(BufferedImage src, Opts o, int maxW, int maxH, int maxTiles) throws IllegalArgumentException {
+        return process(src, o, maxW, maxH, maxTiles, y -> {}, () -> false);
+    }
+
+    /** rowProgress には処理済みの行数 (全体は縦タイル数 x 128) を、8行ごとに渡す */
+    public static Result process(BufferedImage src, Opts o, int maxW, int maxH, int maxTiles,
+                                 java.util.function.IntConsumer rowProgress, java.util.function.BooleanSupplier cancelled) throws IllegalArgumentException {
         initPalette();
         int iw = src.getWidth(), ih = src.getHeight();
         int[] dm = dims(iw, ih, o, maxW, maxH);
@@ -123,6 +134,7 @@ public final class ImageProcessor {
         boolean floyd = o.dither.equals("floyd");
         fillRow(0, pw, src2, fw, fh, sx, sy, dx, dy, transparentBg, bgRgb, o, R[0], G[0], B[0], C[0]);
         for (int y = 0; y < ph; y++) {
+            if ((y & 7) == 0) { if (cancelled.getAsBoolean()) throw new Cancelled(); rowProgress.accept(y); }
             int c = y & 1, n = c ^ 1;
             if (y + 1 < ph) fillRow(y + 1, pw, src2, fw, fh, sx, sy, dx, dy, transparentBg, bgRgb, o, R[n], G[n], B[n], C[n]);
             float[] r = R[c], g = G[c], b = B[c]; boolean[] cl = C[c];

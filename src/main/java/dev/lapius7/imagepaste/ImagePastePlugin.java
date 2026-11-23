@@ -105,6 +105,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     @Override
     public void onDisable() {
         for (UUID id : new ArrayList<>(sessions.keySet())) endSession(id);
+        for (Job j : new ArrayList<>(jobs.values())) { j.cancelled = true; finishJob(j, null); }
+        if (progTicker != null) progTicker.cancel();
         if (ticker != null) ticker.cancel();
     }
 
@@ -170,10 +172,6 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     private boolean invertScroll, actionbarOn = true, airClickItem = true;
     private String guideMode = "bossbar";
 
-    private static Color color(String hex, Color def) {
-        try { return Color.fromRGB(Integer.parseInt(hex.replace("#", ""), 16)); } catch (RuntimeException e) { return def; }
-    }
-
     private Particle particleOf(String name, Particle def) {
         if (name == null) return def;
         Particle pt = Registry.PARTICLE_TYPE.get(NamespacedKey.minecraft(name.toLowerCase(Locale.ROOT)));
@@ -199,6 +197,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         try {
             onBreak = OnBreak.valueOf(c.getString("protection.on-break", "protect").toUpperCase(Locale.ROOT).replace('-', '_'));
         } catch (IllegalArgumentException e) { onBreak = OnBreak.PROTECT; }
+        if (progTicker != null) progTicker.cancel();
+        progTicker = getServer().getScheduler().runTaskTimer(this, this::progressTick, 10L, Math.max(1, progCfg().getInt("interval-ticks", 5)));
         if (ticker != null) ticker.cancel();
         ticker = getServer().getScheduler().runTaskTimer(this, this::tick, 10L, Math.max(1, c.getInt("preview.interval-ticks", 4)));
     }
@@ -265,7 +265,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         long now = System.currentTimeMillis();
         Long last = lastUse.get(p.getUniqueId());
         if (!bypass && last != null && now - last < cd) { lang.send(p, "cooldown", "sec", (cd - (now - last) + 999) / 1000); return; }
-        if (!busy.add(p.getUniqueId())) { lang.send(p, "busy"); return; }
+        if (jobs.containsKey(p.getUniqueId()) || !busy.add(p.getUniqueId())) { lang.send(p, "busy"); return; }
         int maxDl = getConfig().getInt("download.max-concurrent", 3);
         if (downloads.incrementAndGet() > maxDl) {
             downloads.decrementAndGet(); busy.remove(p.getUniqueId());
@@ -276,6 +276,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         endSession(p.getUniqueId());
         lang.send(p, "downloading");
         final UUID id = p.getUniqueId();
+        final Job fetchJob = new Job(id);
+        jobs.put(id, fetchJob);
         final int fw = maxW, fh = maxH, ft = maxTiles;
         final ImageFetcher f = fetcher;
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
@@ -294,7 +296,10 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             final String ferr = err; final BufferedImage fimg = img;
             getServer().getScheduler().runTask(this, () -> {
                 Player pl = getServer().getPlayer(id);
+                boolean was = fetchJob.cancelled;
+                finishJob(fetchJob, null);
                 if (pl == null) return;
+                if (was) { lang.send(pl, "cancelled"); return; }
                 if (ferr != null) { lang.send(pl, "error", "reason", ferr); return; }
                 while (o.width > 1) {
                     int[] d = ImageProcessor.dims(fimg.getWidth(), fimg.getHeight(), o, fw, fh);
@@ -505,7 +510,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
                     Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
                     if (!canHang(spot, spot.getRelative(face.getOppositeFace()), face)) bad++;
                 }
-            draw(p, fv, t.look(), rq, cols, rows, base, bad == 0);
+            draw(p, fv, t.look(), rq, cols, rows, base, bad == 0, null);
             status = bad == 0 ? lang.c("preview-ok") : lang.c("preview-blocked", "count", bad);
             where = face == BlockFace.UP ? "where-floor" : face == BlockFace.DOWN ? "where-ceiling" : "where-wall";
         }
@@ -517,7 +522,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     }
 
     /** 範囲の外周・四隅・上辺の印をパーティクルで描く */
-    private void draw(Player p, int[] fv, int[] look, int rq, int cols, int rows, Block base, boolean ok) {
+    private void draw(Player p, int[] fv, int[] look, int rq, int cols, int rows, Block base, boolean ok, Color force) {
         Layout.Box bx = Layout.footprint(fv, look, rq, cols, rows);
         int[][] ax = Layout.axes(fv, look, rq);
         int[] up = ax[0], rt = ax[1];
@@ -531,7 +536,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             else if (rt[i] != 0) { o[i] = rt[i] > 0 ? lo : hi; W = hi - lo; }
             else { o[i] = up[i] > 0 ? lo : hi; H = hi - lo; }
         }
-        Color main = ok ? edgeColor : errorColor, top = ok ? topColor : errorColor;
+        Color main = force != null ? force : ok ? edgeColor : errorColor, top = force != null ? force : ok ? topColor : errorColor;
         float sz = (float) dustSize;
         for (double x = 0; x <= W + 1e-6; x += edgeStep) {
             pt(p, o, rt, up, x, 0, main, sz);
@@ -650,15 +655,27 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         refresh(p, se);
         Target t = se.last;
         if (t == null) { lang.send(p, "look-at-block"); return; }
-        if (se.confirming) return;
+        if (se.confirming || jobs.containsKey(p.getUniqueId())) return;
         se.confirming = true;
         final UUID id = p.getUniqueId();
+        final Opts o = se.o;
+        final BufferedImage img = se.img;
+        final int mw = se.maxW, mh = se.maxH, mt = se.maxTiles;
+        // 確定した瞬間に紙を消して元の持ち物に戻す。以降は進捗表示と枠のパーティクルだけ
+        final Job job = new Job(id);
+        int[] dm = ImageProcessor.dims(img.getWidth(), img.getHeight(), o, mw, mh);
+        job.setFrame(t.face(), t.look(), o.rotate / 90, dm[0], dm[1], t.block().getRelative(t.face()));
+        job.begin("convert", dm[1] * 128);
+        jobs.put(id, job);
+        endSession(id);
         lang.send(p, "processing");
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
             ImageProcessor.Result res = null;
             String err = null;
             try {
-                res = ImageProcessor.process(se.img, se.o, se.maxW, se.maxH, se.maxTiles);
+                res = ImageProcessor.process(img, o, mw, mh, mt, y -> job.done = y, () -> job.cancelled);
+            } catch (ImageProcessor.Cancelled ex) {
+                err = null;
             } catch (IllegalArgumentException ex) {
                 err = ex.getMessage();
             } catch (Throwable ex) {
@@ -667,15 +684,15 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             }
             final String ferr = err; final ImageProcessor.Result fres = res;
             getServer().getScheduler().runTask(this, () -> {
-                if (sessions.get(id) != se) return; // 変換中に中止された
-                endSession(id);
                 Player pl = getServer().getPlayer(id);
-                if (pl == null) return;
-                if (ferr != null) { lang.send(pl, "error", "reason", ferr); return; }
+                if (job.cancelled) { finishJob(job, null); if (pl != null) lang.send(pl, "cancelled"); return; }
+                if (pl == null) { finishJob(job, null); return; }
+                if (ferr != null) { finishJob(job, null); lang.send(pl, "error", "reason", ferr); return; }
                 try {
-                    place(pl, t.block(), t.face(), t.look(), se.o, fres);
+                    place(pl, t.block(), t.face(), t.look(), o, fres, job);
                 } catch (RuntimeException ex) {
                     getLogger().warning("貼り付け失敗: " + ex);
+                    finishJob(job, null);
                     lang.send(pl, "error", "reason", "内部エラー");
                 }
             });
@@ -713,7 +730,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         });
     }
 
-    private void place(Player p, Block clicked, BlockFace face, int[] look, Opts o, ImageProcessor.Result r) {
+    private void place(Player p, Block clicked, BlockFace face, int[] look, Opts o, ImageProcessor.Result r, Job job) {
         int cols = r.cols(), rows = r.rows();
         int[] fv = {face.getModX(), face.getModY(), face.getModZ()};
         int rq = o.rotate / 90;
@@ -733,7 +750,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
                 if (!canHang(spot, back, face)) { bad++; continue; }
                 cells.add(new int[]{col, row});
             }
-        if ((bad > 0 && !skip) || cells.isEmpty()) { lang.send(p, "blocked", "count", bad); return; }
+        if ((bad > 0 && !skip) || cells.isEmpty()) { finishJob(job, null); lang.send(p, "blocked", "count", bad); return; }
 
         String pid = store.newId();
         final int perTick = getConfig().getInt("place.tiles-per-tick", 16);
@@ -744,16 +761,15 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         final UUID owner = p.getUniqueId();
         final String ownerName = p.getName();
         final int badF = bad, total = cells.size();
-        final Job job = new Job();
-        jobs.put(owner, job);
+        job.begin("place", total);
         lang.send(p, "placing", "total", total);
 
         getServer().getScheduler().runTaskTimer(this, task -> {
             Player pl = getServer().getPlayer(owner);
             boolean fail = false;
             try {
-                for (int n = 0; n < batch && job.next < total && !job.cancelled; n++) {
-                    int[] cell = cells.get(job.next++);
+                for (int n = 0; n < batch && job.done < total && !job.cancelled; n++) {
+                    int[] cell = cells.get(job.done++);
                     int col = cell[0], row = cell[1];
                     byte[] px = tiles[row * cols + col];
                     MapView view = Bukkit.createMap(w);
@@ -775,24 +791,17 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             }
             if (fail || job.cancelled) {
                 task.cancel();
-                jobs.remove(owner, job);
+                finishJob(job, null);
                 for (Store.Frame f : frames) { Entity en = Bukkit.getEntity(f.uuid()); if (en != null) en.remove(); }
-                if (pl != null) {
-                    pl.sendActionBar(Component.empty());
-                    lang.send(pl, fail ? "error" : "place-cancelled", "reason", "内部エラー");
-                }
+                if (pl != null) lang.send(pl, fail ? "error" : "place-cancelled", "reason", "内部エラー");
                 return;
             }
-            if (job.next < total) {
-                if (pl != null) pl.sendActionBar(lang.c("progress", "done", job.next, "total", total, "percent", job.next * 100 / total));
-                return;
-            }
+            if (job.done < total) return;
             task.cancel();
-            jobs.remove(owner, job);
+            finishJob(job, lang.c("progress-done", "total", total));
             store.add(new Store.Paste(pid, owner, ownerName, w.getName(), System.currentTimeMillis(), cols, rows, frames,
                     o.invisible, o.glow, o.fixed));
             if (pl != null) {
-                pl.sendActionBar(Component.empty());
                 lang.send(pl, "placed", "cols", cols, "rows", rows, "count", frames.size(), "id", pid);
                 if (badF > 0) lang.send(pl, "skipped", "count", badF);
             }
@@ -800,16 +809,114 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         }, 0L, 1L);
     }
 
-    /** 実行中の貼り付け (複数tickに分けて進める) */
-    static final class Job { volatile boolean cancelled; int next; }
-    final Map<UUID, Job> jobs = new ConcurrentHashMap<>();
+    /** 1人ぶんの貼り付け処理 (取得 → 変換 → 配置)。表示と中止のために進捗を持つ */
+    static final class Job {
+        final UUID owner;
+        volatile boolean cancelled;
+        volatile String stage = "fetch";
+        volatile int done, total;
+        volatile long stageStart = System.currentTimeMillis();
+        BossBar bar;
+        boolean hasFrame;
+        int[] fv, look;
+        int rq, cols, rows;
+        Block base;
 
-    /** 実行中の貼り付けを中止する。あれば true */
+        Job(UUID owner) { this.owner = owner; }
+
+        void begin(String stage, int total) { this.stage = stage; this.done = 0; this.total = total; this.stageStart = System.currentTimeMillis(); }
+
+        void setFrame(BlockFace face, int[] look, int rq, int cols, int rows, Block base) {
+            this.fv = new int[]{face.getModX(), face.getModY(), face.getModZ()};
+            this.look = look; this.rq = rq; this.cols = cols; this.rows = rows; this.base = base; this.hasFrame = true;
+        }
+    }
+
+    final Map<UUID, Job> jobs = new ConcurrentHashMap<>();
+    private org.bukkit.scheduler.BukkitTask progTicker;
+
+    /** 実行中の処理 (取得・変換・配置) を中止する。あれば true */
     boolean cancelJob(UUID id) {
         Job j = jobs.get(id);
         if (j == null) return false;
         j.cancelled = true;
         return true;
+    }
+
+    private ConfigurationSection progCfg() {
+        ConfigurationSection s = getConfig().getConfigurationSection("effects.progress");
+        return s != null ? s : new org.bukkit.configuration.MemoryConfiguration();
+    }
+
+    private static Color color(String hex, Color def) {
+        try { return Color.fromRGB(Integer.parseInt(hex.replace("#", ""), 16)); } catch (RuntimeException e) { return def; }
+    }
+
+    /** 進捗表示と処理中の枠を更新する (メインスレッド) */
+    private void progressTick() {
+        ConfigurationSection pc = progCfg();
+        boolean show = pc.getBoolean("enabled", true), frame = pc.getBoolean("frame.enabled", true);
+        long now = System.currentTimeMillis();
+        for (Job j : jobs.values()) {
+            Player p = getServer().getPlayer(j.owner);
+            if (p == null) continue;
+            try {
+                if (show) showProgress(p, j, pc, now);
+                if (frame && j.hasFrame) {
+                    long blink = Math.max(1, pc.getLong("frame.blink-ticks", 10)) * 50;
+                    Color c = (now / blink) % 2 == 0
+                            ? color(pc.getString("frame.color", "#FFAA00"), Color.ORANGE)
+                            : color(pc.getString("frame.alt-color", "#FFFFFF"), Color.WHITE);
+                    draw(p, j.fv, j.look, j.rq, j.cols, j.rows, j.base, true, c);
+                }
+            } catch (RuntimeException ex) { getLogger().warning("進捗表示に失敗: " + ex); }
+        }
+    }
+
+    private void showProgress(Player p, Job j, ConfigurationSection pc, long now) {
+        String st = j.stage;
+        int d = j.done, t = j.total;
+        boolean fetch = st.equals("fetch") || t <= 0;
+        double frac = fetch ? (now % 2000) / 2000.0 : Math.min(1.0, d / (double) t);
+        Component line = lang.c("progress-" + st, "done", d, "total", t, "percent", (int) (frac * 100));
+        if (pc.getBoolean("show-eta", true) && !fetch && d > 0 && t > d) {
+            long sec = Math.max(1, (now - j.stageStart) * (t - d) / d / 1000);
+            line = line.append(lang.c("progress-eta", "sec", sec));
+        }
+        line = line.append(lang.c("progress-cancel-hint"));
+        switch (pc.getString("display", "bossbar").toLowerCase(Locale.ROOT)) {
+            case "actionbar" -> p.sendActionBar(line);
+            case "title" -> p.showTitle(net.kyori.adventure.title.Title.title(Component.empty(), line,
+                    net.kyori.adventure.title.Title.Times.times(java.time.Duration.ZERO, java.time.Duration.ofMillis(1500), java.time.Duration.ZERO)));
+            case "none" -> {}
+            default -> {
+                if (j.bar == null) {
+                    BossBar.Color col = BossBar.Color.YELLOW;
+                    BossBar.Overlay ov = BossBar.Overlay.PROGRESS;
+                    try { col = BossBar.Color.valueOf(pc.getString("bossbar-color", "YELLOW").toUpperCase(Locale.ROOT)); } catch (IllegalArgumentException ignored) {}
+                    try { ov = BossBar.Overlay.valueOf(pc.getString("bossbar-overlay", "PROGRESS").toUpperCase(Locale.ROOT)); } catch (IllegalArgumentException ignored) {}
+                    j.bar = BossBar.bossBar(line, (float) frac, col, ov);
+                    p.showBossBar(j.bar);
+                } else {
+                    j.bar.name(line);
+                    j.bar.progress((float) frac);
+                }
+            }
+        }
+    }
+
+    /** 処理を終える。表示を消し、done があれば完了表示を出す */
+    void finishJob(Job j, Component done) {
+        jobs.remove(j.owner, j);
+        Player p = getServer().getPlayer(j.owner);
+        if (p == null) return;
+        if (j.bar != null) { p.hideBossBar(j.bar); j.bar = null; }
+        String mode = progCfg().getString("display", "bossbar").toLowerCase(Locale.ROOT);
+        if (mode.equals("title")) p.clearTitle();
+        if (done != null && progCfg().getBoolean("enabled", true) && !mode.equals("none")) {
+            if (mode.equals("title")) p.showTitle(net.kyori.adventure.title.Title.title(done, Component.empty()));
+            else p.sendActionBar(done);
+        } else if (!mode.equals("bossbar")) p.sendActionBar(Component.empty());
     }
 
     // ---------- 設置演出 (確定した瞬間) ----------

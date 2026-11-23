@@ -94,6 +94,19 @@ effects:
       - { sound: "minecraft:entity.firework_rocket.blast", volume: 1.0, pitch: 1.0, delay: 8 }
       - { sound: "minecraft:entity.firework_rocket.twinkle", volume: 1.0, pitch: 1.0, delay: 12 }
       - { sound: "minecraft:entity.player.levelup", volume: 0.9, pitch: 1.2, delay: 23 }
+  # 確定後 (取得・変換・配置) の進捗表示。文言は lang.yml の progress-*
+  progress:
+    enabled: true
+    display: bossbar           # bossbar / actionbar / title / none
+    interval-ticks: 5          # 表示の更新間隔
+    show-eta: true             # 残り時間の目安を出す
+    bossbar-color: YELLOW      # PINK BLUE RED GREEN YELLOW PURPLE WHITE
+    bossbar-overlay: PROGRESS  # PROGRESS / NOTCHED_6 / NOTCHED_10 / NOTCHED_12 / NOTCHED_20
+    frame:
+      enabled: true            # 処理中、貼り付け範囲の枠を点滅させる
+      color: "#FFAA00"
+      alt-color: "#FFFFFF"
+      blink-ticks: 10          # 色を切り替える間隔
   # 撤去時の演出
   remove:
     enabled: true
