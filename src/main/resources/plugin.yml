@@ -1,0 +1,21 @@
+name: ImagePaste
+version: '${version}'
+main: dev.lapius7.imagepaste.ImagePastePlugin
+api-version: '26.3'
+description: 画像URLを地図+不可視額縁のタイルで壁・床・天井に貼る
+commands:
+  imagepaste:
+    description: 画像を貼り付ける
+    usage: /imagepaste <画像URL> [width=N] [height=N] [quality=...] | undo | cancel | list | remove | reload
+    aliases: [ip]
+    permission: imagepaste.use
+permissions:
+  imagepaste.use:
+    description: /imagepaste で画像を貼り付け・undo・削除する
+    default: op
+  imagepaste.admin:
+    description: reload、他人の貼り付けの一覧と削除
+    default: op
+  imagepaste.bypass:
+    description: クールダウンとサイズ上限を無視する
+    default: false

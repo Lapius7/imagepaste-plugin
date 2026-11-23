@@ -1,0 +1,62 @@
+# ImagePaste 設定。/imagepaste reload で反映。
+# defaults の項目は、コマンド引数 (例: /imagepaste <URL> width=6 dither=none) で一回だけ上書きできます。
+
+defaults:
+  width: 4              # 横のブロック数
+  height: 0             # 縦のブロック数。0 = 縦横比から自動
+  mode: fit             # fit(全体を収める) / fill(隙間なく覆い余りを切る) / stretch(引き伸ばす)
+  resample: bicubic     # nearest / bilinear / bicubic
+  dither: floyd         # none / floyd / ordered
+  brightness: 0.0       # 明るさ -1.0 ～ 1.0
+  contrast: 1.0         # コントラスト 0.0 ～ 3.0
+  saturation: 1.0       # 彩度 0.0 ～ 3.0
+  background: transparent   # transparent か #RRGGBB。余白と透明部分の色
+  rotate: 0             # 床・天井の向きの回転 0/90/180/270 (壁では無視)
+  invisible-frame: true # 額縁を不可視にする
+  glow-frame: false     # 発光額縁を使う (暗所でも明るい)
+  fixed: true           # 額縁を固定する (回転・取り外し不可)
+  on-blocked: abort     # 置き場所が埋まっているとき abort(全体中止) / skip(その枠だけ飛ばす)
+
+limits:
+  max-width: 16
+  max-height: 16
+  max-tiles: 128               # 1回の貼り付けの最大タイル(地図)数
+  cooldown-seconds: 10         # 同一プレイヤーの連続実行の間隔
+  pending-timeout-seconds: 60  # URL指定後、右クリックを待つ時間
+
+download:
+  max-bytes: 10485760          # 取得サイズ上限 (10MiB)
+  max-source-pixels: 40000000  # 元画像の画素数上限
+  connect-timeout-seconds: 5
+  timeout-seconds: 15
+  max-redirects: 3
+  max-concurrent: 3            # 同時に取得できる数
+  allowed-ports: [80, 443]
+  allowed-hosts: []            # 空なら全公開ホスト可。指定すると完全一致またはサブドメインのみ許可
+
+messages:
+  prefix: "&b[ImagePaste]&r "
+  downloading: "画像を取得中です..."
+  ready: "準備完了 ({cols}x{rows}タイル)。貼りたいブロックの面を右クリックしてください (/imagepaste cancel で中止)"
+  cancelled: "貼り付けを中止しました"
+  expired: "時間切れで貼り付け待ちを解除しました"
+  placed: "貼り付けました ({cols}x{rows}タイル, 地図{count}枚)。/imagepaste undo で取り消せます"
+  skipped: "{n}枠は置けないため飛ばしました"
+  blocked: "置き場所が埋まっているため中止しました (問題の枠: {n})"
+  undone: "直前の貼り付けを削除しました"
+  nothing-to-undo: "取り消せる貼り付けがありません"
+  cooldown: "{s}秒後に再実行できます"
+  no-permission: "権限がありません"
+  error: "失敗: {reason}"
+  reloaded: "設定を再読み込みしました"
+  usage: "/imagepaste <画像URL> [width=N] [height=N] [mode=..] [quality=low|normal|high] [dither=..] ... | undo | cancel | list | remove <id> | reload"
+  bad-option: "オプションが不正です: {opt}"
+  too-large: "サイズが上限を超えています (最大 {w}x{h})"
+  too-many-tiles: "タイル数が上限({n})を超えます"
+  busy: "取得中です。しばらくお待ちください"
+  server-busy: "取得が混み合っています。少し待ってください"
+  nothing-pending: "待機中の貼り付けはありません"
+  players-only: "プレイヤーのみ使えます"
+  not-found: "そのIDの貼り付けが見つかりません"
+  removed: "削除しました: {id}"
+  list-empty: "貼り付けはありません"
