@@ -1,5 +1,7 @@
 <div align="center">
 
+<p align="center"><img src="docs/images/banner.png" alt="ImagePaste: Paste any image into Minecraft" width="100%"></p>
+
 <p align="center"><a href="README.md">English</a> | <b>日本語</b></p>
 
 <h1 align="center">ImagePaste</h1>
@@ -31,14 +33,10 @@
 
 `/imagepaste <URL>` を実行して貼りたい面を見て、右クリックするだけです。画像は地図の色に減色され、地図を入れた不可視の額縁として並びます。
 
-<p align="center">
-  <img src="docs/images/preview.png" alt="地面にプレビューの枠が出ていて、壁には貼り付け済みの画像が見える" width="100%">
-</p>
-
 <table>
   <tr>
-    <td width="60%"><img src="docs/images/preview-wall.png" alt="壁に出たプレビュー枠の拡大。外周は水色、四隅は白、上辺は黄色" width="100%"></td>
-    <td>プレビューの枠です。水色が外周、白が四隅、黄色が画像の<b>上辺</b>です。置けない枠が1つでもあると、全体が赤になります。</td>
+    <td width="50%" align="center"><img src="docs/images/preview.png" alt="貼り付けプレビュー中。壁にパーティクルの枠、ボスバーとチャットに操作説明、アクションバーに現在の値が出ている" width="100%"><br><b>プレビュー</b><br>パーティクルの枠が出て、操作はボスバーとチャットに表示されます。水色が外周、白が四隅、黄色が画像の<b>上辺</b>です。置けない枠が1つでもあると、全体が赤になります。</td>
+    <td width="50%" align="center"><img src="docs/images/pasted.png" alt="壁に地図タイルとして貼り付けられた Minecraft の画像" width="100%"><br><b>貼り付け結果</b><br>右クリックで確定すると、画像が地図タイルとして壁に並びます。</td>
   </tr>
 </table>
 

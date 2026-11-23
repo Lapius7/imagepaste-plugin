@@ -1,5 +1,7 @@
 <div align="center">
 
+<p align="center"><img src="docs/images/banner.png" alt="ImagePaste: Paste any image into Minecraft" width="100%"></p>
+
 <p align="center"><b>English</b> | <a href="README.ja.md">日本語</a></p>
 
 <h1 align="center">ImagePaste</h1>
@@ -31,14 +33,10 @@
 
 Run `/imagepaste <URL>`, look at a surface, and right-click. The image is reduced to map colors and placed as invisible item frames holding maps.
 
-<p align="center">
-  <img src="docs/images/preview.png" alt="Preview outline on the ground while a pasted image is visible on a wall" width="100%">
-</p>
-
 <table>
   <tr>
-    <td width="60%"><img src="docs/images/preview-wall.png" alt="Close-up of the particle outline on a wall: cyan edge, white corners, yellow top edge" width="100%"></td>
-    <td>The outline in the preview. Cyan is the edge, white the corners, and yellow marks the <b>top</b> of the image. If any frame cannot be placed, the whole outline turns red.</td>
+    <td width="50%" align="center"><img src="docs/images/preview.png" alt="Preview while placing: particle outline on a wall, controls in the boss bar, chat and action bar" width="100%"><br><b>Preview</b><br>A particle outline, with controls in the boss bar and chat. Cyan is the edge, white the corners, and yellow marks the <b>top</b> of the image. If any frame cannot be placed, the whole outline turns red.</td>
+    <td width="50%" align="center"><img src="docs/images/pasted.png" alt="A Minecraft image pasted on a wall as map tiles" width="100%"><br><b>Pasted result</b><br>After you right-click, the image appears on the wall as map tiles.</td>
   </tr>
 </table>
 
