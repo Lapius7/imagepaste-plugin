@@ -24,21 +24,40 @@ public final class Layout {
     /**
      * 画像の「上」の向き。
      * 壁: 真上。床: プレイヤーの向き(奥が上)。天井: プレイヤーの向きの逆(見上げたとき視界の上は後ろ)。
-     * rotateQuarter で時計回りに回す(床・天井のみ)。
+     * rotateQuarter で、見る人から見て時計回りに回す。
      */
     public static int[] imageUp(int[] face, int[] look, int rotateQuarter) {
-        if (face[1] == 0) return new int[]{0, 1, 0};
         int[] d = neg(face);
-        int[] u = face[1] > 0 ? look.clone() : neg(look);
+        int[] u = face[1] == 0 ? new int[]{0, 1, 0} : face[1] > 0 ? look.clone() : neg(look);
         for (int i = 0; i < Math.floorMod(rotateQuarter, 4); i++) u = clockwise(d, u);
         return u;
+    }
+
+    /** {上, 右} の軸ベクトル */
+    public static int[][] axes(int[] face, int[] look, int rotateQuarter) {
+        int[] up = imageUp(face, look, rotateQuarter);
+        return new int[][]{up, clockwise(neg(face), up)};
+    }
+
+    /** 貼り付け範囲の外接ブロック箱 (両端を含む) */
+    public record Box(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {}
+
+    /** 基準ブロックからのオフセットで表した外接箱 */
+    public static Box footprint(int[] face, int[] look, int rotateQuarter, int cols, int rows) {
+        int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE}, hi = {Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
+        for (int c : new int[]{0, cols - 1}) for (int r : new int[]{0, rows - 1}) {
+            Tile t = tile(face, look, rotateQuarter, cols, rows, c, r);
+            int[] v = {t.dx(), t.dy(), t.dz()};
+            for (int i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], v[i]); hi[i] = Math.max(hi[i], v[i]); }
+        }
+        return new Box(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
     }
 
     /** 額縁の回転 0 のとき、地図の上が向く方向 (上向き面=北, 下向き面=南) */
     public static int[] mapTopAtRotation0(int[] face) {
         if (face[1] > 0) return new int[]{0, 0, -1};
         if (face[1] < 0) return new int[]{0, 0, 1};
-        return new int[]{0, 1, 0};
+        return new int[]{0, 1, 0}; // 壁
     }
 
     /** 地図の上を u に向けるのに必要な時計回りの段数 (0..3) */

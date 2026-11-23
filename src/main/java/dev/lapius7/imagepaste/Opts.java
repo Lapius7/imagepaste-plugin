@@ -8,9 +8,11 @@ import java.util.Locale;
 /** 貼り付け1回分の設定。config.yml の defaults を元に、コマンド引数で上書きする。 */
 public final class Opts {
     public static final List<String> KEYS = List.of("width", "height", "mode", "quality", "resample", "dither",
-            "brightness", "contrast", "saturation", "background", "rotate", "invisible", "glow", "fixed", "blocked");
+            "brightness", "contrast", "saturation", "background", "rotate", "flip", "invisible", "glow", "fixed", "blocked");
 
     public int width = 4, height = 0, rotate = 0;
+    /** bit0 = 左右反転, bit1 = 上下反転 */
+    public int flip = 0;
     public String mode = "fit", resample = "bicubic", dither = "floyd", blocked = "abort";
     public double brightness = 0, contrast = 1, saturation = 1;
     /** null = 透明 */
@@ -29,6 +31,8 @@ public final class Opts {
         o.contrast = c.getDouble(p + "contrast", 1);
         o.saturation = c.getDouble(p + "saturation", 1);
         o.rotate = c.getInt(p + "rotate", 0);
+        String fl = c.getString(p + "flip", "none");
+        if (set(o, "flip", fl) != null) o.flip = 0;
         o.invisible = c.getBoolean(p + "invisible-frame", true);
         o.glow = c.getBoolean(p + "glow-frame", false);
         o.fixed = c.getBoolean(p + "fixed", true);
@@ -48,7 +52,7 @@ public final class Opts {
 
     public Opts copy() {
         Opts o = new Opts();
-        o.width = width; o.height = height; o.rotate = rotate; o.mode = mode; o.resample = resample;
+        o.width = width; o.height = height; o.rotate = rotate; o.flip = flip; o.mode = mode; o.resample = resample;
         o.dither = dither; o.blocked = blocked; o.brightness = brightness; o.contrast = contrast;
         o.saturation = saturation; o.background = background; o.invisible = invisible; o.glow = glow; o.fixed = fixed;
         return o;
@@ -73,7 +77,16 @@ public final class Opts {
                 }
                 case "brightness" -> o.brightness = clamp(Double.parseDouble(v), -1, 1);
                 case "contrast" -> o.contrast = clamp(Double.parseDouble(v), 0, 3);
-                case "saturation" -> o.saturation = clamp(Double.parseDouble(v), 0, 3);
+                case "flip" -> {
+                switch (v.toLowerCase(Locale.ROOT)) {
+                    case "none" -> o.flip = 0;
+                    case "h" -> o.flip = 1;
+                    case "v" -> o.flip = 2;
+                    case "both" -> o.flip = 3;
+                    default -> { return "flip は none/h/v/both"; }
+                }
+            }
+            case "saturation" -> o.saturation = clamp(Double.parseDouble(v), 0, 3);
                 case "rotate" -> {
                     int r = Integer.parseInt(v);
                     if (r % 90 != 0) return "rotate は 0/90/180/270";
@@ -112,6 +125,7 @@ public final class Opts {
             case "dither" -> List.of("none", "floyd", "ordered");
             case "quality" -> List.of("low", "normal", "high");
             case "rotate" -> List.of("0", "90", "180", "270");
+            case "flip" -> List.of("none", "h", "v", "both");
             case "background" -> List.of("transparent", "#FFFFFF", "#000000");
             case "invisible", "glow", "fixed" -> List.of("true", "false");
             case "blocked" -> List.of("abort", "skip");

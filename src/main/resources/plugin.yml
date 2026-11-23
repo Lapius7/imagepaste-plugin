@@ -6,7 +6,7 @@ description: 画像URLを地図+不可視額縁のタイルで壁・床・天井
 commands:
   imagepaste:
     description: 画像を貼り付ける
-    usage: /imagepaste <画像URL> [width=N] [height=N] [quality=...] | undo | cancel | list | remove | reload
+    usage: "/imagepaste <URL> | size|rotate|flip|confirm|cancel|undo|list|remove|reload"
     aliases: [ip]
     permission: imagepaste.use
 permissions:

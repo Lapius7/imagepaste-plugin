@@ -5,10 +5,20 @@
 
 ## 使い方
 
-1. `/imagepaste <画像URL> [オプション]` を実行します。画像は非同期で取得・減色します。
-2. 「準備完了」と出たら、貼りたいブロックの面を右クリックします。クリックしたブロックの面に接する位置が **左下** になり、右と上へ広がります。
-3. 床・天井では、画像の上はプレイヤーが向いている方向になります。
-4. `/imagepaste undo` で直前の貼り付けを消せます。再起動後も残ります。
+1. `/imagepaste <画像URL> [オプション]` を実行します。画像を取得すると **プレビューモード** に入ります。
+2. 貼りたい面を見ると、貼り付け範囲が粒子の枠で表示されます。外周は水色、四隅は白、**上辺は黄色の線と矢印**で、画像の上がどちらかを示します。置けない枠があると全体が赤になります。
+3. 操作は次のとおりです。アクションバーに大きさ・向き・反転・タイル数が出ます。
+
+| 操作 | 内容 |
+|---|---|
+| Shift + スクロール | 大きさを拡縮 |
+| `F` (持ち替え) | 90度回転 (時計回り) |
+| `Q` (ドロップ) | 反転を切替 (なし→左右→上下→両方) |
+| 右クリック | 確定して貼る |
+| 左クリック | キャンセル |
+
+4. 床では、画像の上はプレイヤーが向いている方向、天井では逆向きです。壁では上が上になります。
+5. `/imagepaste undo` で直前の貼り付けを消せます。再起動後も残ります。
 
 例: `/imagepaste https://example.com/a.png width=6 quality=high background=#000000`
 
@@ -16,9 +26,13 @@
 
 | コマンド | 内容 |
 |---|---|
-| `/imagepaste <URL> [key=value ...]` | 貼り付け待ちにする (別名 `/ip`) |
+| `/imagepaste <URL> [key=value ...]` | プレビューを開始 (別名 `/ip`) |
+| `size <w> [h]` | プレビューの大きさを指定 |
+| `rotate [0\|90\|180\|270]` | 回転 (省略で90度ずつ) |
+| `flip [none\|h\|v\|both]` | 反転 (省略で順に切替) |
+| `confirm` | 見ている面に確定 |
 | `undo` | 直前の貼り付けを削除 |
-| `cancel` | 貼り付け待ちを中止 |
+| `cancel` | プレビューを中止 |
 | `list [all]` | 自分の貼り付け一覧 (`all` は管理者のみ) |
 | `remove <id>` | 指定IDを削除 (他人のものは管理者のみ) |
 | `reload` | config.yml を再読み込み (管理者) |
@@ -47,7 +61,8 @@
 | `contrast` | 0.0〜3.0 | コントラスト |
 | `saturation` | 0.0〜3.0 | 彩度 |
 | `background` | transparent / #RRGGBB | 余白と透明部分の色 |
-| `rotate` | 0 / 90 / 180 / 270 | 床・天井の回転 (壁では無視) |
+| `rotate` | 0 / 90 / 180 / 270 | 時計回りの回転 (壁・床・天井) |
+| `flip` | none / h / v / both | 反転 (左右 / 上下 / 両方) |
 | `invisible` (config は `invisible-frame`) | true/false | 額縁を不可視にする |
 | `glow` (config は `glow-frame`) | true/false | 発光額縁を使う |
 | `fixed` | true/false | 額縁を固定する (回転・取り外し不可) |
@@ -60,7 +75,22 @@
 | `max-width` / `max-height` | 16 | 最大ブロック数 |
 | `max-tiles` | 128 | 1回の最大タイル(地図)数 |
 | `cooldown-seconds` | 10 | 連続実行の間隔 |
-| `pending-timeout-seconds` | 60 | URL指定後、右クリックを待つ時間 |
+| `pending-timeout-seconds` | 120 | 操作がないままプレビューを保てる時間 |
+
+### preview (プレビュー)
+
+| 項目 | 既定 | 内容 |
+|---|---|---|
+| `interval-ticks` | 4 | 枠の更新間隔 (tick) |
+| `max-distance` | 10 | 見ている面を探す距離 |
+| `particle` | DUST | 粒子の種類 (DUST 以外は色が効かない) |
+| `particle-size` | 1.0 | DUST の大きさ |
+| `edge-step` | 0.5 | 粒子の間隔 (ブロック) |
+| `edge-color` / `top-color` / `corner-color` / `error-color` | #55FFFF / #FFFF55 / #FFFFFF / #FF5555 | 外周 / 上辺 / 四隅 / エラー時の色 |
+| `scroll-sensitivity` | 1 | 何ノッチで1段階変えるか |
+| `scroll-step` | 1 | 1段階で変わるブロック数 |
+| `invert-scroll` | false | スクロール方向を逆にする |
+| `actionbar-enabled` / `actionbar` | true | アクションバー表示と書式 |
 
 ### download (取得)
 

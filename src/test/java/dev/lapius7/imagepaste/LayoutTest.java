@@ -20,24 +20,40 @@ class LayoutTest {
 
     /** 回転 k 段のとき地図の上が向く方向 (バニラの描画: 上向き面は北、下向き面は南が回転0) */
     static int[] mapTop(int[] face, int k) {
-        if (face[1] == 0) return UP; // 壁は回転0のみ
+        if (face[1] == 0) { // 壁: 見る人から見て時計回り = 上 → 右手 → 下 → 左手
+            int[] r = cw(neg(face));
+            return new int[][]{UP, r, DOWN, neg(r)}[k];
+        }
         int[] t = face[1] > 0 ? N : S;
         for (int i = 0; i < k; i++) t = face[1] > 0 ? cw(t) : ccw(t); // 床=上から時計回り, 天井=下から時計回り
         return t;
     }
 
     @Test
-    void wallsAllDirections() {
+    void wallsAllDirectionsAndRotations() {
         for (int[] face : CARD) {
-            int[] look = neg(face);                 // 壁を見る人の視線
-            int[] right = cw(look);                 // 見る人の右手
-            for (int cols = 1; cols <= 4; cols++) for (int rows = 1; rows <= 4; rows++)
-                for (int c = 0; c < cols; c++) for (int r = 0; r < rows; r++) {
-                    Layout.Tile t = Layout.tile(face, new int[]{0, 0, 0}, 0, cols, rows, c, r);
-                    int[] exp = add(mul(right, c), mul(UP, rows - 1 - r));
-                    assertArrayEquals(exp, new int[]{t.dx(), t.dy(), t.dz()}, "wall " + Arrays.toString(face));
-                    assertEquals(0, t.rotation());
-                }
+            int[] right0 = cw(neg(face)); // 見る人の右手
+            for (int rot = 0; rot < 4; rot++) {
+                int[] up = new int[][]{UP, right0, DOWN, neg(right0)}[rot];
+                int[] right = new int[][]{right0, DOWN, neg(right0), UP}[rot]; // 上を時計回りに回すと右も回る
+                check(face, new int[]{0, 0, 0}, rot, up, right);
+            }
+        }
+    }
+
+    @Test
+    void footprintCoversAllTilesAndHasRightSize() {
+        int[][] faces = {N, E, S, W, UP, DOWN};
+        for (int[] face : faces) for (int[] look : CARD) for (int rot = 0; rot < 4; rot++) {
+            int cols = 5, rows = 2;
+            Layout.Box b = Layout.footprint(face, look, rot, cols, rows);
+            for (int c = 0; c < cols; c++) for (int r = 0; r < rows; r++) {
+                Layout.Tile t = Layout.tile(face, look, rot, cols, rows, c, r);
+                assertTrue(t.dx() >= b.minX() && t.dx() <= b.maxX() && t.dy() >= b.minY() && t.dy() <= b.maxY()
+                        && t.dz() >= b.minZ() && t.dz() <= b.maxZ());
+            }
+            int vol = (b.maxX() - b.minX() + 1) * (b.maxY() - b.minY() + 1) * (b.maxZ() - b.minZ() + 1);
+            assertEquals(cols * rows, vol);
         }
     }
 

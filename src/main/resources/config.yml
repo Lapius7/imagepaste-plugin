@@ -11,7 +11,8 @@ defaults:
   contrast: 1.0         # コントラスト 0.0 ～ 3.0
   saturation: 1.0       # 彩度 0.0 ～ 3.0
   background: transparent   # transparent か #RRGGBB。余白と透明部分の色
-  rotate: 0             # 床・天井の向きの回転 0/90/180/270 (壁では無視)
+  rotate: 0             # 向きの回転 0/90/180/270 (時計回り)
+  flip: none            # 反転 none / h(左右) / v(上下) / both
   invisible-frame: true # 額縁を不可視にする
   glow-frame: false     # 発光額縁を使う (暗所でも明るい)
   fixed: true           # 額縁を固定する (回転・取り外し不可)
@@ -22,7 +23,7 @@ limits:
   max-height: 16
   max-tiles: 128               # 1回の貼り付けの最大タイル(地図)数
   cooldown-seconds: 10         # 同一プレイヤーの連続実行の間隔
-  pending-timeout-seconds: 60  # URL指定後、右クリックを待つ時間
+  pending-timeout-seconds: 120 # プレビュー中、操作がないまま待てる時間
 
 download:
   max-bytes: 10485760          # 取得サイズ上限 (10MiB)
@@ -34,10 +35,31 @@ download:
   allowed-ports: [80, 443]
   allowed-hosts: []            # 空なら全公開ホスト可。指定すると完全一致またはサブドメインのみ許可
 
+preview:
+  interval-ticks: 4            # 枠の更新間隔 (tick)。小さいほど滑らかだが負荷が増える
+  max-distance: 10             # 見ている面を探す距離 (ブロック)
+  particle: DUST               # 粒子の種類 (DUST 以外は色指定が効きません。例: END_ROD)
+  particle-size: 1.0           # DUST の大きさ
+  edge-step: 0.5               # 粒子の間隔 (ブロック)。小さいほど密
+  edge-color: "#55FFFF"        # 外周の色
+  top-color: "#FFFF55"         # 上辺と矢印の色 (画像の上を示す)
+  corner-color: "#FFFFFF"      # 四隅の色
+  error-color: "#FF5555"       # 置けない場所があるときの色
+  scroll-sensitivity: 1        # スクロール何ノッチで1段階変えるか
+  scroll-step: 1               # 1段階で変わるブロック数
+  invert-scroll: false         # true でスクロール方向を逆にする
+  actionbar-enabled: true
+  actionbar: "&b{cols}x{rows}&7 ({tiles}タイル) &f{where} 回転{rotate}° 反転:{flip} &8| &7{status}"
+
 messages:
+  ready: "プレビュー中: 右クリック=確定 / 左クリック=キャンセル / Shift+スクロール=拡縮 / F=回転 / Q=反転"
+  look-at-block: "貼りたいブロックを見てください"
+  processing: "画像を変換中です..."
+  preview-look: "ブロックを見てください"
+  preview-ok: "右クリックで確定"
+  preview-blocked: "置けない枠があります ({n})"
   prefix: "&b[ImagePaste]&r "
   downloading: "画像を取得中です..."
-  ready: "準備完了 ({cols}x{rows}タイル)。貼りたいブロックの面を右クリックしてください (/imagepaste cancel で中止)"
   cancelled: "貼り付けを中止しました"
   expired: "時間切れで貼り付け待ちを解除しました"
   placed: "貼り付けました ({cols}x{rows}タイル, 地図{count}枚)。/imagepaste undo で取り消せます"
@@ -49,7 +71,7 @@ messages:
   no-permission: "権限がありません"
   error: "失敗: {reason}"
   reloaded: "設定を再読み込みしました"
-  usage: "/imagepaste <画像URL> [width=N] [height=N] [mode=..] [quality=low|normal|high] [dither=..] ... | undo | cancel | list | remove <id> | reload"
+  usage: "/imagepaste <画像URL> [width=N] ... | size <w> [h] | rotate | flip | confirm | cancel | undo | list | remove <id> | reload"
   bad-option: "オプションが不正です: {opt}"
   too-large: "サイズが上限を超えています (最大 {w}x{h})"
   too-many-tiles: "タイル数が上限({n})を超えます"

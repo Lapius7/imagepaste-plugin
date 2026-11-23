@@ -66,19 +66,30 @@ public final class ImageProcessor {
         return 0;
     }
 
-    // --- 本体 ---
-    public static Result process(BufferedImage src, Opts o, int maxW, int maxH, int maxTiles) throws IllegalArgumentException {
-        initPalette();
-        int iw = src.getWidth(), ih = src.getHeight();
+    /** 画像サイズと設定から {横タイル数, 縦タイル数} を決める (純粋関数) */
+    public static int[] dims(int iw, int ih, Opts o, int maxW, int maxH) {
         int cols = Math.max(1, Math.min(o.width, maxW));
         int rows;
         if (o.height > 0) rows = Math.min(o.height, maxH);
         else rows = (int) Math.max(1, Math.min(maxH, Math.ceil(cols * (double) ih / iw)));
+        return new int[]{cols, rows};
+    }
+
+    // --- 本体 ---
+    public static Result process(BufferedImage src, Opts o, int maxW, int maxH, int maxTiles) throws IllegalArgumentException {
+        initPalette();
+        int iw = src.getWidth(), ih = src.getHeight();
+        int[] dm = dims(iw, ih, o, maxW, maxH);
+        int cols = dm[0], rows = dm[1];
         if (cols * rows > maxTiles) throw new IllegalArgumentException("タイル数が上限(" + maxTiles + ")を超えます: " + cols + "x" + rows);
 
         int pw = cols * TILE, ph = rows * TILE;
         int[] argb = new int[iw * ih];
         src.getRGB(0, 0, iw, ih, argb, 0, iw);
+        if ((o.flip & 1) != 0) for (int y = 0; y < ih; y++)
+            for (int x = 0; x < iw / 2; x++) { int a = y * iw + x, b = y * iw + iw - 1 - x; int t = argb[a]; argb[a] = argb[b]; argb[b] = t; }
+        if ((o.flip & 2) != 0) for (int y = 0; y < ih / 2; y++)
+            for (int x = 0; x < iw; x++) { int a = y * iw + x, b = (ih - 1 - y) * iw + x; int t = argb[a]; argb[a] = argb[b]; argb[b] = t; }
 
         // 目的の矩形 (キャンバス座標)
         double dw, dh;
