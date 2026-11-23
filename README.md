@@ -24,18 +24,48 @@
 
 ## コマンド
 
+引数なしの `/imagepaste` でヘルプが開きます。ヘルプの行はクリックで入力欄に入ります。
+
 | コマンド | 内容 |
 |---|---|
-| `/imagepaste <URL> [key=value ...]` | プレビューを開始 (別名 `/ip`) |
+| `/imagepaste <URL> [key=value ...]` | プレビューを開始 (別名 `/ip`)。URL は `://` を含むもの |
+| `help` | ヘルプ |
 | `size <w> [h]` | プレビューの大きさを指定 |
 | `rotate [0\|90\|180\|270]` | 回転 (省略で90度ずつ) |
 | `flip [none\|h\|v\|both]` | 反転 (省略で順に切替) |
-| `confirm` | 見ている面に確定 |
+| `confirm` / `cancel` | 確定 / 中止 |
 | `undo` | 直前の貼り付けを削除 |
-| `cancel` | プレビューを中止 |
-| `list [all]` | 自分の貼り付け一覧 (`all` は管理者のみ) |
+| `list [all] [ページ]` | 一覧。行のボタンから削除・移動できます (`all` は管理者のみ) |
 | `remove <id>` | 指定IDを削除 (他人のものは管理者のみ) |
-| `reload` | config.yml を再読み込み (管理者) |
+| `tp <id>` | 貼り付けの場所へ移動 |
+| `reload` | config.yml と lang.yml を再読み込み (管理者) |
+
+## プレビュー中の操作
+
+右クリック=確定 / 左クリック=中止 / Shift+スクロール=拡縮 / F=回転 / Q=反転。
+操作一覧は画面上部のボスバーに出ます (`preview.guide.mode` で bossbar / scoreboard / chat / none)。現在の大きさ・向き・置けるかどうかはアクションバーに出ます。
+
+- 見る先が遠くても (`preview.max-distance`、既定64) 置けます。確定は、そのとき表示している位置で行います。空を向いたままの右クリックでも確定できます。
+- 素手のままだと空中の右クリックがサーバーに届かないため、持ち手が空のときだけ一時的に紙を持たせます (`preview.air-click-item: false` で無効)。終了時に回収します。
+
+## 保護と整合
+
+貼った額縁は、`protection.enabled` が true の間、次の操作を拒否します: 破壊 (プレイヤー・爆発・水流など)、回転、アイテムの出し入れ、地図の取り出し。ドロップは出ません。
+`protection.allow-break-permission` が true なら、`imagepaste.break` を持つ人だけ壊せます。
+
+額縁が失われたとき (`/kill`、他プラグイン、チャンクの再読み込みで見つからないなど) は、`protection.on-break` に従って記録を整えます。
+
+| 値 | 動作 |
+|---|---|
+| `protect` | 欠けた枠の記録と地図データだけ外す (全部なくなれば貼り付けごと消す) |
+| `remove-all` | 貼り付け全体を撤去する |
+| `regenerate` | 欠けた額縁を同じ場所・向きで作り直す (置けなければ記録を外す) |
+
+起動時に、記録にない地図データと、記録にない額縁を整理します。
+
+## 演出
+
+`effects.place` / `effects.remove` で、貼り付け・撤去時のパーティクルと効果音を変えられます。`enabled: false` で無効、`particle` や `sound` を空欄にすれば個別に無効です。
 
 ## 権限
 
@@ -43,6 +73,7 @@
 |---|---|---|
 | `imagepaste.use` | 貼り付け・undo・自分の削除 | op |
 | `imagepaste.admin` | reload、他人の一覧・削除 | op |
+| `imagepaste.break` | 保護された額縁を壊す | op |
 | `imagepaste.bypass` | クールダウンとサイズ上限を無視 | なし |
 
 ## 設定一覧
@@ -104,9 +135,9 @@
 | `allowed-ports` | [80, 443] | 許可ポート |
 | `allowed-hosts` | [] | 空なら全公開ホスト。指定すると完全一致かサブドメインのみ |
 
-### messages (文言)
+### lang.yml (文言)
 
-`messages` 以下で変更できます。`&` で色を指定でき、`{cols}` `{rows}` `{count}` `{n}` `{s}` `{reason}` `{id}` などが使えます。
+メッセージは `plugins/ImagePaste/lang.yml` に分けてあります。MiniMessage 形式で、色・クリック・ホバーも書けます。`<id>` のような部分は実行時の値です。足りない項目は内蔵の既定文を使います。`/imagepaste reload` で反映されます。
 
 ## セキュリティ
 

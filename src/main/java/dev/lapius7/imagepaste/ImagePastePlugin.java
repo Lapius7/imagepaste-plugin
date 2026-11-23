@@ -1,24 +1,32 @@
 package dev.lapius7.imagepaste;
 
+import io.papermc.paper.scoreboard.numbers.NumberFormat;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.command.*;
+import org.bukkit.command.PluginCommand;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.event.server.MapInitializeEvent;
 import org.bukkit.inventory.EquipmentSlot;
-import org.bukkit.util.RayTraceResult;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapView;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scoreboard.Criteria;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.util.RayTraceResult;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -26,31 +34,46 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public final class ImagePastePlugin extends JavaPlugin implements Listener, TabExecutor {
+public final class ImagePastePlugin extends JavaPlugin implements Listener {
+    /** プレビューが狙っている場所 */
+    record Target(Block block, BlockFace face, int[] look) {}
+
     /** プレビュー中の1人分の状態 */
-    private static final class Session {
+    static final class Session {
         final BufferedImage img;
         final Opts o;
         final int maxW, maxH, maxTiles;
         long expires;
         double scroll;
-        Session(BufferedImage img, Opts o, int maxW, int maxH, int maxTiles, long expires) {
-            this.img = img; this.o = o; this.maxW = maxW; this.maxH = maxH; this.maxTiles = maxTiles; this.expires = expires;
+        Target last;
+        BossBar bar;
+        Scoreboard prevBoard;
+        Session(BufferedImage img, Opts o, int maxW, int maxH, int maxTiles) {
+            this.img = img; this.o = o; this.maxW = maxW; this.maxH = maxH; this.maxTiles = maxTiles;
         }
     }
 
-    private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
+    enum OnBreak { PROTECT, REMOVE_ALL, REGENERATE }
+
+    final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final Set<UUID> busy = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Long> lastUse = new ConcurrentHashMap<>();
+    private final Map<String, Long> notified = new ConcurrentHashMap<>();
     private final AtomicInteger downloads = new AtomicInteger();
-    private Store store;
-    private ImageFetcher fetcher;
-    private NamespacedKey pasteKey;
+    Store store;
+    Lang lang;
+    ImageFetcher fetcher;
+    NamespacedKey pasteKey, markerKey;
+    OnBreak onBreak = OnBreak.PROTECT;
+    private Guard guard;
+    private org.bukkit.scheduler.BukkitTask ticker;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         pasteKey = new NamespacedKey(this, "paste");
+        markerKey = new NamespacedKey(this, "marker");
+        lang = new Lang(this);
         try {
             store = new Store(getDataFolder().toPath().resolve("data"));
         } catch (IOException e) {
@@ -58,160 +81,135 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        fetcher = new ImageFetcher(getConfig().getConfigurationSection("download") == null
-                ? new org.bukkit.configuration.MemoryConfiguration() : getConfig().getConfigurationSection("download"));
+        fetcher = newFetcher();
+        guard = new Guard(this);
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(guard, this);
         PluginCommand cmd = Objects.requireNonNull(getCommand("imagepaste"));
-        cmd.setExecutor(this);
-        cmd.setTabCompleter(this);
-        loadPreviewCfg();
-        getServer().getScheduler().runTaskTimer(this, this::tick, 10L, Math.max(1, getConfig().getInt("preview.interval-ticks", 4)));
-        getLogger().info("読み込み完了 (貼り付け " + store.all().size() + "件)");
+        Commands c = new Commands(this);
+        cmd.setExecutor(c);
+        cmd.setTabCompleter(c);
+        loadCfg();
+        int purged = store.purgeOrphanTiles();
+        if (purged > 0) getLogger().info("記録にない地図データを " + purged + "件 削除しました");
+        guard.sweepLoaded();
+        for (Player p : getServer().getOnlinePlayers()) sweepMarkers(p);
+        getLogger().info("読み込み完了 (貼り付け " + store.all().size() + "件, 破損時: " + onBreak + ")");
     }
 
-    // ---------- メッセージ ----------
-    private String raw(String key, String def) { return getConfig().getString("messages." + key, def); }
-
-    private void msg(CommandSender to, String key, String def, Object... kv) {
-        String s = raw(key, def);
-        for (int i = 0; i + 1 < kv.length; i += 2) s = s.replace("{" + kv[i] + "}", String.valueOf(kv[i + 1]));
-        to.sendMessage(LegacyComponentSerializer.legacyAmpersand().deserialize(raw("prefix", "&b[ImagePaste]&r ") + s));
-    }
-
-    // ---------- コマンド ----------
     @Override
-    public boolean onCommand(CommandSender s, Command c, String label, String[] a) {
-        if (!s.hasPermission("imagepaste.use")) { msg(s, "no-permission", "権限がありません"); return true; }
-        if (a.length == 0 || a[0].equalsIgnoreCase("help")) { usage(s); return true; }
-        switch (a[0].toLowerCase(Locale.ROOT)) {
-            case "reload" -> {
-                if (!s.hasPermission("imagepaste.admin")) { msg(s, "no-permission", "権限がありません"); return true; }
-                reloadConfig();
-                loadPreviewCfg();
-                fetcher = new ImageFetcher(getConfig().getConfigurationSection("download") == null
-                        ? new org.bukkit.configuration.MemoryConfiguration() : getConfig().getConfigurationSection("download"));
-                msg(s, "reloaded", "設定を再読み込みしました");
-            }
-            case "cancel" -> {
-                if (s instanceof Player p) {
-                    boolean had = sessions.remove(p.getUniqueId()) != null;
-                    msg(s, had ? "cancelled" : "nothing-pending", had ? "貼り付けを中止しました" : "待機中の貼り付けはありません");
-                }
-            }
-            case "size" -> withSession(s, (p, se) -> {
-                try {
-                    if (a.length < 2) { msg(p, "bad-option", "オプションが不正です: {opt}", "opt", "size <w> [h]"); return; }
-                    int w = Integer.parseInt(a[1]), h = a.length > 2 ? Integer.parseInt(a[2]) : 0;
-                    if (!applySize(p, se, w, h)) return;
-                } catch (NumberFormatException ex) { msg(p, "bad-option", "オプションが不正です: {opt}", "opt", "size は整数"); }
-            });
-            case "rotate" -> withSession(s, (p, se) -> {
-                if (a.length > 1) {
-                    String err = Opts.set(se.o, "rotate", a[1]);
-                    if (err != null) { msg(p, "bad-option", "オプションが不正です: {opt}", "opt", err); return; }
-                } else se.o.rotate = (se.o.rotate + 90) % 360;
-                touch(se);
-            });
-            case "flip" -> withSession(s, (p, se) -> {
-                if (a.length > 1) {
-                    String err = Opts.set(se.o, "flip", a[1]);
-                    if (err != null) { msg(p, "bad-option", "オプションが不正です: {opt}", "opt", err); return; }
-                } else se.o.flip = (se.o.flip + 1) % 4;
-                touch(se);
-            });
-            case "confirm" -> withSession(s, (p, se) -> {
-                RayTraceResult rr = p.rayTraceBlocks(previewDistance, FluidCollisionMode.NEVER);
-                if (rr == null || rr.getHitBlock() == null || rr.getHitBlockFace() == null) { msg(p, "look-at-block", "貼りたいブロックを見てください"); return; }
-                confirm(p, se, rr.getHitBlock(), rr.getHitBlockFace());
-            });
-            case "undo" -> {
-                if (!(s instanceof Player p)) { msg(s, "players-only", "プレイヤーのみ使えます"); return true; }
-                Store.Paste last = store.lastOf(p.getUniqueId());
-                if (last == null) { msg(s, "nothing-to-undo", "取り消せる貼り付けがありません"); return true; }
-                removePaste(last);
-                msg(s, "undone", "直前の貼り付けを削除しました");
-            }
-            case "list" -> {
-                boolean all = a.length > 1 && a[1].equalsIgnoreCase("all") && s.hasPermission("imagepaste.admin");
-                List<Store.Paste> l = all ? store.all() : (s instanceof Player p ? store.byOwner(p.getUniqueId()) : store.all());
-                if (l.isEmpty()) { msg(s, "list-empty", "貼り付けはありません"); return true; }
-                for (Store.Paste p : l)
-                    s.sendMessage(Component.text(p.id + "  " + p.cols + "x" + p.rows + "  " + p.world + " ("
-                            + p.frames.get(0).x() + "," + p.frames.get(0).y() + "," + p.frames.get(0).z() + ")  " + p.ownerName));
-            }
-            case "remove" -> {
-                if (a.length < 2) { usage(s); return true; }
-                Store.Paste p = store.find(a[1]);
-                boolean admin = s.hasPermission("imagepaste.admin");
-                if (p == null || (!admin && !(s instanceof Player pl && pl.getUniqueId().equals(p.owner)))) {
-                    msg(s, "not-found", "その ID の貼り付けが見つかりません");
-                    return true;
-                }
-                removePaste(p);
-                msg(s, "removed", "削除しました: {id}", "id", p.id);
-            }
-            default -> startPaste(s, a);
-        }
-        return true;
+    public void onDisable() {
+        for (UUID id : new ArrayList<>(sessions.keySet())) endSession(id);
+        if (ticker != null) ticker.cancel();
     }
 
-    private void usage(CommandSender s) {
-        msg(s, "usage", "/imagepaste <画像URL> [width=N] [height=N] [quality=low|normal|high] ... | size <w> [h] | rotate | flip | confirm | cancel | undo | list | remove <id> | reload");
+    ImageFetcher newFetcher() {
+        ConfigurationSection d = getConfig().getConfigurationSection("download");
+        return new ImageFetcher(d == null ? new org.bukkit.configuration.MemoryConfiguration() : d);
     }
 
-    private void withSession(CommandSender s, java.util.function.BiConsumer<Player, Session> f) {
-        if (!(s instanceof Player p)) { msg(s, "players-only", "プレイヤーのみ使えます"); return; }
+    void reloadAll() {
+        reloadConfig();
+        lang.reload();
+        fetcher = newFetcher();
+        loadCfg();
+    }
+
+    // ---------- 設定 ----------
+    private int previewDistance = 64;
+    private double edgeStep = 0.5, dustSize = 1.0;
+    private Particle particle = Particle.DUST;
+    private Color edgeColor, topColor, cornerColor, errorColor;
+    private int scrollNotches = 1, scrollStep = 1;
+    private boolean invertScroll, actionbarOn = true, airClickItem = true;
+    private String guideMode = "bossbar";
+
+    private static Color color(String hex, Color def) {
+        try { return Color.fromRGB(Integer.parseInt(hex.replace("#", ""), 16)); } catch (RuntimeException e) { return def; }
+    }
+
+    private Particle particleOf(String name, Particle def) {
+        if (name == null) return def;
+        Particle pt = Registry.PARTICLE_TYPE.get(NamespacedKey.minecraft(name.toLowerCase(Locale.ROOT)));
+        return pt != null ? pt : def;
+    }
+
+    private void loadCfg() {
+        var c = getConfig();
+        previewDistance = Math.max(2, c.getInt("preview.max-distance", 64));
+        edgeStep = Math.max(0.1, c.getDouble("preview.edge-step", 0.5));
+        dustSize = c.getDouble("preview.particle-size", 1.0);
+        edgeColor = color(c.getString("preview.edge-color", "#55FFFF"), Color.AQUA);
+        topColor = color(c.getString("preview.top-color", "#FFFF55"), Color.YELLOW);
+        cornerColor = color(c.getString("preview.corner-color", "#FFFFFF"), Color.WHITE);
+        errorColor = color(c.getString("preview.error-color", "#FF5555"), Color.RED);
+        scrollNotches = Math.max(1, c.getInt("preview.scroll-sensitivity", 1));
+        scrollStep = Math.max(1, c.getInt("preview.scroll-step", 1));
+        invertScroll = c.getBoolean("preview.invert-scroll", false);
+        actionbarOn = c.getBoolean("preview.actionbar-enabled", true);
+        airClickItem = c.getBoolean("preview.air-click-item", true);
+        guideMode = c.getString("preview.guide.mode", "bossbar").toLowerCase(Locale.ROOT);
+        particle = particleOf(c.getString("preview.particle", "DUST"), Particle.DUST);
+        try {
+            onBreak = OnBreak.valueOf(c.getString("protection.on-break", "protect").toUpperCase(Locale.ROOT).replace('-', '_'));
+        } catch (IllegalArgumentException e) { onBreak = OnBreak.PROTECT; }
+        if (ticker != null) ticker.cancel();
+        ticker = getServer().getScheduler().runTaskTimer(this, this::tick, 10L, Math.max(1, c.getInt("preview.interval-ticks", 4)));
+    }
+
+    // ---------- プレビュー開始 ----------
+    void withSession(org.bukkit.command.CommandSender s, java.util.function.BiConsumer<Player, Session> f) {
+        if (!(s instanceof Player p)) { lang.send(s, "players-only"); return; }
         Session se = sessions.get(p.getUniqueId());
-        if (se == null) { msg(s, "nothing-pending", "待機中の貼り付けはありません"); return; }
+        if (se == null) { lang.send(s, "nothing-pending"); return; }
         f.accept(p, se);
         touch(se);
     }
 
-    private void touch(Session se) {
+    void touch(Session se) {
         se.expires = System.currentTimeMillis() + getConfig().getLong("limits.pending-timeout-seconds", 120) * 1000;
     }
 
     /** サイズを指定。上限を超える場合は変更せず false */
-    private boolean applySize(Player p, Session se, int w, int h) {
-        if (w < 1 || h < 0) { msg(p, "bad-option", "オプションが不正です: {opt}", "opt", "サイズは1以上"); return false; }
-        if (w > se.maxW || h > se.maxH) { msg(p, "too-large", "サイズが上限を超えています (最大 {w}x{h})", "w", se.maxW, "h", se.maxH); return false; }
+    boolean applySize(Player p, Session se, int w, int h) {
+        if (w < 1 || h < 0) { lang.send(p, "bad-option", "opt", "サイズは1以上"); return false; }
+        if (w > se.maxW || h > se.maxH) { lang.send(p, "too-large", "maxw", se.maxW, "maxh", se.maxH); return false; }
         Opts t = new Opts(); t.width = w; t.height = h;
         int[] d = ImageProcessor.dims(se.img.getWidth(), se.img.getHeight(), t, se.maxW, se.maxH);
-        if (d[0] * d[1] > se.maxTiles) { msg(p, "too-many-tiles", "タイル数が上限({n})を超えます", "n", se.maxTiles); return false; }
+        if (d[0] * d[1] > se.maxTiles) { lang.send(p, "too-many-tiles", "max", se.maxTiles); return false; }
         se.o.width = w; se.o.height = h;
         touch(se);
         return true;
     }
 
-    private void startPaste(CommandSender s, String[] a) {
-        if (!(s instanceof Player p)) { msg(s, "players-only", "プレイヤーのみ使えます"); return; }
+    void startPaste(Player p, String[] a) {
         boolean bypass = p.hasPermission("imagepaste.bypass");
         String url = a[0];
         Opts o = Opts.fromConfig(getConfig());
         for (int i = 1; i < a.length; i++) {
             int eq = a[i].indexOf('=');
-            if (eq <= 0) { msg(s, "bad-option", "オプションが不正です: {opt}", "opt", a[i]); return; }
+            if (eq <= 0) { lang.send(p, "bad-option", "opt", a[i]); return; }
             String err = Opts.set(o, a[i].substring(0, eq), a[i].substring(eq + 1));
-            if (err != null) { msg(s, "bad-option", "オプションが不正です: {opt}", "opt", err); return; }
+            if (err != null) { lang.send(p, "bad-option", "opt", err); return; }
         }
         int maxW = getConfig().getInt("limits.max-width", 16), maxH = getConfig().getInt("limits.max-height", 16);
         int maxTiles = getConfig().getInt("limits.max-tiles", 128);
         if (bypass) { maxW = maxH = 64; maxTiles = Integer.MAX_VALUE; }
-        if (o.width > maxW || o.height > maxH) { msg(s, "too-large", "サイズが上限を超えています (最大 {w}x{h})", "w", maxW, "h", maxH); return; }
+        if (o.width > maxW || o.height > maxH) { lang.send(p, "too-large", "maxw", maxW, "maxh", maxH); return; }
         long cd = getConfig().getLong("limits.cooldown-seconds", 10) * 1000;
         long now = System.currentTimeMillis();
         Long last = lastUse.get(p.getUniqueId());
-        if (!bypass && last != null && now - last < cd) { msg(s, "cooldown", "{s}秒後に再実行できます", "s", (cd - (now - last) + 999) / 1000); return; }
-        if (!busy.add(p.getUniqueId())) { msg(s, "busy", "取得中です。しばらくお待ちください"); return; }
+        if (!bypass && last != null && now - last < cd) { lang.send(p, "cooldown", "sec", (cd - (now - last) + 999) / 1000); return; }
+        if (!busy.add(p.getUniqueId())) { lang.send(p, "busy"); return; }
         int maxDl = getConfig().getInt("download.max-concurrent", 3);
         if (downloads.incrementAndGet() > maxDl) {
             downloads.decrementAndGet(); busy.remove(p.getUniqueId());
-            msg(s, "server-busy", "取得が混み合っています。少し待ってください");
+            lang.send(p, "server-busy");
             return;
         }
         lastUse.put(p.getUniqueId(), now);
-        sessions.remove(p.getUniqueId());
-        msg(s, "downloading", "画像を取得中です...");
+        endSession(p.getUniqueId());
+        lang.send(p, "downloading");
         final UUID id = p.getUniqueId();
         final int fw = maxW, fh = maxH, ft = maxTiles;
         final ImageFetcher f = fetcher;
@@ -232,56 +230,106 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
             getServer().getScheduler().runTask(this, () -> {
                 Player pl = getServer().getPlayer(id);
                 if (pl == null) return;
-                if (ferr != null) { msg(pl, "error", "失敗: {reason}", "reason", ferr); return; }
-                // タイル数が上限を超える初期サイズは、収まるまで縮める
+                if (ferr != null) { lang.send(pl, "error", "reason", ferr); return; }
                 while (o.width > 1) {
                     int[] d = ImageProcessor.dims(fimg.getWidth(), fimg.getHeight(), o, fw, fh);
                     if (d[0] * d[1] <= ft) break;
                     o.width--; o.height = 0;
                 }
-                Session se = new Session(fimg, o, fw, fh, ft, 0);
+                Session se = new Session(fimg, o, fw, fh, ft);
                 touch(se);
                 sessions.put(id, se);
-                msg(pl, "ready", "プレビュー中です。右クリック=確定 / 左クリック=キャンセル / F=回転 / Q=反転 / Shift+スクロール=拡縮");
+                startGuide(pl, se);
+                ensureMarker(pl);
+                lang.send(pl, "ready");
             });
         });
     }
 
-    // ---------- プレビュー ----------
-    private int previewDistance = 10;
-    private double edgeStep = 0.5, dustSize = 1.0;
-    private Particle particle = Particle.DUST;
-    private Color edgeColor, topColor, cornerColor, errorColor;
-    private String actionbarFmt;
-    private int scrollNotches = 1, scrollStep = 1;
-    private boolean invertScroll;
-
-    private static Color color(String hex, Color def) {
-        try { return Color.fromRGB(Integer.parseInt(hex.replace("#", ""), 16)); } catch (RuntimeException e) { return def; }
+    /** プレビューを終える。表示と一時アイテムを片付ける */
+    void endSession(UUID id) {
+        Session se = sessions.remove(id);
+        if (se == null) return;
+        Player p = getServer().getPlayer(id);
+        if (p == null) return;
+        if (se.bar != null) p.hideBossBar(se.bar);
+        if (se.prevBoard != null) p.setScoreboard(se.prevBoard);
+        sweepMarkers(p);
+        if (actionbarOn) p.sendActionBar(Component.empty());
     }
 
-    private void loadPreviewCfg() {
-        var c = getConfig();
-        previewDistance = Math.max(2, c.getInt("preview.max-distance", 10));
-        edgeStep = Math.max(0.1, c.getDouble("preview.edge-step", 0.5));
-        dustSize = c.getDouble("preview.particle-size", 1.0);
-        edgeColor = color(c.getString("preview.edge-color", "#55FFFF"), Color.AQUA);
-        topColor = color(c.getString("preview.top-color", "#FFFF55"), Color.YELLOW);
-        cornerColor = color(c.getString("preview.corner-color", "#FFFFFF"), Color.WHITE);
-        errorColor = color(c.getString("preview.error-color", "#FF5555"), Color.RED);
-        scrollNotches = Math.max(1, c.getInt("preview.scroll-sensitivity", 1));
-        scrollStep = Math.max(1, c.getInt("preview.scroll-step", 1));
-        invertScroll = c.getBoolean("preview.invert-scroll", false);
-        actionbarFmt = c.getString("preview.actionbar", "&b{cols}x{rows}&7 ({tiles}タイル) &f向き {rotate}° 反転 {flip} &8| &7{status}");
-        String pn = c.getString("preview.particle", "DUST").toLowerCase(Locale.ROOT);
-        Particle pt = Registry.PARTICLE_TYPE.get(NamespacedKey.minecraft(pn));
-        particle = pt != null ? pt : Particle.DUST;
+    // ---------- 操作説明 (ボスバー / スコアボード / チャット) ----------
+    private void startGuide(Player p, Session se) {
+        List<String> lines = lang.list("guide-lines");
+        switch (guideMode) {
+            case "bossbar" -> {
+                Component t = Component.empty();
+                for (int i = 0; i < lines.size(); i++) {
+                    if (i > 0) t = t.append(Component.text("  |  ", net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY));
+                    t = t.append(lang.parse(lines.get(i)));
+                }
+                BossBar.Color col = BossBar.Color.BLUE;
+                BossBar.Overlay ov = BossBar.Overlay.PROGRESS;
+                try { col = BossBar.Color.valueOf(getConfig().getString("preview.guide.bossbar-color", "BLUE").toUpperCase(Locale.ROOT)); } catch (IllegalArgumentException ignored) {}
+                try { ov = BossBar.Overlay.valueOf(getConfig().getString("preview.guide.bossbar-overlay", "PROGRESS").toUpperCase(Locale.ROOT)); } catch (IllegalArgumentException ignored) {}
+                se.bar = BossBar.bossBar(t, 1f, col, ov);
+                p.showBossBar(se.bar);
+            }
+            case "scoreboard" -> {
+                se.prevBoard = p.getScoreboard();
+                Scoreboard sb = Bukkit.getScoreboardManager().getNewScoreboard();
+                Objective ob = sb.registerNewObjective("ipaste", Criteria.DUMMY, lang.c("guide-title"));
+                ob.setDisplaySlot(DisplaySlot.SIDEBAR);
+                ob.numberFormat(NumberFormat.blank());
+                for (int i = 0; i < lines.size(); i++) {
+                    var sc = ob.getScore("§" + Integer.toHexString(i));
+                    sc.setScore(lines.size() - i);
+                    sc.customName(lang.parse(lines.get(i)));
+                }
+                p.setScoreboard(sb);
+            }
+            case "chat" -> {
+                p.sendMessage(lang.c("guide-title"));
+                for (String l : lines) p.sendMessage(lang.parse(l));
+            }
+            default -> {}
+        }
     }
 
+    // ---------- 空中クリック用の一時アイテム ----------
+    boolean isMarker(ItemStack it) {
+        return it != null && it.hasItemMeta() && it.getItemMeta().getPersistentDataContainer().has(markerKey, PersistentDataType.BYTE);
+    }
+
+    void sweepMarkers(Player p) {
+        PlayerInventory inv = p.getInventory();
+        for (int i = 0; i < inv.getSize(); i++) if (isMarker(inv.getItem(i))) inv.setItem(i, null);
+        if (isMarker(p.getItemOnCursor())) p.setItemOnCursor(null);
+    }
+
+    /** 素手のままだと空中の右クリックが届かないため、持ち手が空のときだけ一時アイテムを持たせる */
+    private void ensureMarker(Player p) {
+        if (!airClickItem) return;
+        PlayerInventory inv = p.getInventory();
+        ItemStack hand = inv.getItemInMainHand();
+        if (isMarker(hand)) return;
+        sweepMarkers(p);
+        if (!hand.getType().isAir()) return;
+        ItemStack m = new ItemStack(Material.PAPER);
+        var meta = m.getItemMeta();
+        meta.displayName(lang.c("marker-name"));
+        meta.getPersistentDataContainer().set(markerKey, PersistentDataType.BYTE, (byte) 1);
+        m.setItemMeta(meta);
+        inv.setItemInMainHand(m);
+    }
+
+    // ---------- プレビュー描画 ----------
     private void spawn(Player p, double x, double y, double z, Color col, float size) {
         Location l = new Location(p.getWorld(), x, y, z);
-        if (particle == Particle.DUST) p.spawnParticle(Particle.DUST, l, 1, 0, 0, 0, 0, new Particle.DustOptions(col, size));
-        else p.spawnParticle(particle, l, 1, 0, 0, 0, 0);
+        if (particle == Particle.DUST)
+            p.getWorld().spawnParticle(Particle.DUST, List.of(p), null, x, y, z, 1, 0, 0, 0, 0, new Particle.DustOptions(col, size), true);
+        else if (particle.getDataType() == Void.class)
+            p.getWorld().spawnParticle(particle, List.of(p), null, x, y, z, 1, 0, 0, 0, 0, null, true);
     }
 
     private void tick() {
@@ -289,44 +337,53 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
         for (var en : sessions.entrySet()) {
             Player p = getServer().getPlayer(en.getKey());
             Session se = en.getValue();
-            if (p == null || !p.isOnline()) { sessions.remove(en.getKey()); continue; }
-            if (now > se.expires) { sessions.remove(en.getKey()); msg(p, "expired", "時間切れで貼り付け待ちを解除しました"); continue; }
-            try { renderPreview(p, se); } catch (RuntimeException ex) { getLogger().warning("プレビュー描画に失敗: " + ex); }
+            if (p == null || !p.isOnline()) { endSession(en.getKey()); continue; }
+            if (now > se.expires) { endSession(en.getKey()); lang.send(p, "expired"); continue; }
+            try { ensureMarker(p); renderPreview(p, se); } catch (RuntimeException ex) { getLogger().warning("プレビュー描画に失敗: " + ex); }
         }
+    }
+
+    /** いま見ているブロックの面を調べ、あれば狙いを更新する。空振りなら前回の狙いを残す */
+    private Target refresh(Player p, Session se) {
+        RayTraceResult rr = p.rayTraceBlocks(previewDistance, FluidCollisionMode.NEVER);
+        if (rr != null && rr.getHitBlock() != null && rr.getHitBlockFace() != null) {
+            BlockFace lf = cardinal(p.getLocation().getYaw());
+            se.last = new Target(rr.getHitBlock(), rr.getHitBlockFace(), new int[]{lf.getModX(), 0, lf.getModZ()});
+            return se.last;
+        }
+        return null;
     }
 
     private void renderPreview(Player p, Session se) {
         Opts o = se.o;
         int[] dm = ImageProcessor.dims(se.img.getWidth(), se.img.getHeight(), o, se.maxW, se.maxH);
         int cols = dm[0], rows = dm[1];
-        RayTraceResult rr = p.rayTraceBlocks(previewDistance, FluidCollisionMode.NEVER);
-        Block hit = rr == null ? null : rr.getHitBlock();
-        BlockFace face = rr == null ? null : rr.getHitBlockFace();
-        String status;
-        if (hit == null || face == null) {
-            status = raw("preview-look", "ブロックを見てください");
+        boolean aimed = refresh(p, se) != null;
+        Target t = se.last;
+        Component status;
+        String where = "where-none";
+        if (t == null) {
+            status = lang.c("preview-look");
         } else {
+            BlockFace face = t.face();
             int[] fv = {face.getModX(), face.getModY(), face.getModZ()};
-            BlockFace lf = cardinal(p.getLocation().getYaw());
-            int[] look = {lf.getModX(), 0, lf.getModZ()};
             int rq = o.rotate / 90;
-            Block base = hit.getRelative(face);
+            Block base = t.block().getRelative(face);
             int bad = 0;
             for (int row = 0; row < rows; row++)
                 for (int col = 0; col < cols; col++) {
-                    Layout.Tile t = Layout.tile(fv, look, rq, cols, rows, col, row);
-                    Block spot = base.getRelative(t.dx(), t.dy(), t.dz());
+                    Layout.Tile lt = Layout.tile(fv, t.look(), rq, cols, rows, col, row);
+                    Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
                     if (!canHang(spot, spot.getRelative(face.getOppositeFace()), face)) bad++;
                 }
-            draw(p, fv, look, rq, cols, rows, base, bad == 0);
-            status = bad == 0 ? raw("preview-ok", "右クリックで確定") : raw("preview-blocked", "置けない枠があります ({n})").replace("{n}", String.valueOf(bad));
+            draw(p, fv, t.look(), rq, cols, rows, base, bad == 0);
+            status = bad == 0 ? lang.c("preview-ok") : lang.c("preview-blocked", "count", bad);
+            where = face == BlockFace.UP ? "where-floor" : face == BlockFace.DOWN ? "where-ceiling" : "where-wall";
         }
-        if (getConfig().getBoolean("preview.actionbar-enabled", true)) {
-            String where = face == null ? "-" : face == BlockFace.UP ? "床" : face == BlockFace.DOWN ? "天井" : "壁";
-            String t = actionbarFmt.replace("{cols}", "" + cols).replace("{rows}", "" + rows).replace("{tiles}", "" + cols * rows)
-                    .replace("{rotate}", "" + o.rotate).replace("{flip}", new String[]{"なし", "左右", "上下", "左右+上下"}[o.flip])
-                    .replace("{where}", where).replace("{status}", status);
-            p.sendActionBar(LegacyComponentSerializer.legacyAmpersand().deserialize(t));
+        if (actionbarOn) {
+            String[] fl = {"flip-none", "flip-h", "flip-v", "flip-both"};
+            p.sendActionBar(lang.c("actionbar", "cols", cols, "rows", rows, "tiles", cols * rows, "rotate", o.rotate,
+                    "flip", lang.c(fl[o.flip]), "where", lang.c(where), "status", status));
         }
     }
 
@@ -381,18 +438,22 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
         e.setCancelled(true);
         if (e.getHand() != EquipmentSlot.HAND) return;
         if (act == Action.LEFT_CLICK_AIR || act == Action.LEFT_CLICK_BLOCK) {
-            sessions.remove(p.getUniqueId());
-            msg(p, "cancelled", "貼り付けを中止しました");
+            endSession(p.getUniqueId());
+            lang.send(p, "cancelled");
             return;
         }
-        Block clicked = e.getClickedBlock();
-        BlockFace face = e.getBlockFace();
-        if (clicked == null) {
-            RayTraceResult rr = p.rayTraceBlocks(previewDistance, FluidCollisionMode.NEVER);
-            if (rr == null || rr.getHitBlock() == null || rr.getHitBlockFace() == null) { msg(p, "look-at-block", "貼りたいブロックを見てください"); return; }
-            clicked = rr.getHitBlock(); face = rr.getHitBlockFace();
-        }
-        confirm(p, se, clicked, face);
+        confirm(p, se);
+    }
+
+    /** 左クリック (腕を振る動作) は、空中でも PlayerInteractEvent が飛ばない環境の保険 */
+    @EventHandler
+    public void onSwing(PlayerAnimationEvent e) {
+        Player p = e.getPlayer();
+        Session se = sessions.get(p.getUniqueId());
+        if (se == null || e.getAnimationType() != PlayerAnimationType.ARM_SWING) return;
+        // PlayerInteractEvent が先に処理して終了済みなら se は残っていない
+        endSession(p.getUniqueId());
+        lang.send(p, "cancelled");
     }
 
     @EventHandler
@@ -401,8 +462,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
         Session se = sessions.get(p.getUniqueId());
         if (se == null || !p.isSneaking()) return;
         e.setCancelled(true);
-        int d = Math.floorMod(e.getNewSlot() - e.getPreviousSlot() + 4, 9) - 4; // -4..4
-        se.scroll += (invertScroll ? d : -d); // ホイール上 (スロット番号が減る) = 拡大
+        int d = Math.floorMod(e.getNewSlot() - e.getPreviousSlot() + 4, 9) - 4;
+        se.scroll += (invertScroll ? d : -d);
         int steps = (int) (se.scroll / scrollNotches);
         if (steps == 0) return;
         se.scroll -= steps * scrollNotches;
@@ -423,20 +484,39 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
     @EventHandler
     public void onDrop(PlayerDropItemEvent e) {
         Session se = sessions.get(e.getPlayer().getUniqueId());
-        if (se == null) return;
+        if (se == null && !isMarker(e.getItemDrop().getItemStack())) return;
         e.setCancelled(true);
+        if (se == null) return;
         se.o.flip = (se.o.flip + 1) % 4;
         touch(se);
     }
 
-    /** 確定: 画像を非同期で減色し、終わったらその場所に貼る */
-    private void confirm(Player p, Session se, Block clicked, BlockFace face) {
-        if (!p.hasPermission("imagepaste.use")) { msg(p, "no-permission", "権限がありません"); return; }
-        if (sessions.remove(p.getUniqueId(), se) == false) return;
-        BlockFace lf = cardinal(p.getLocation().getYaw());
-        final int[] look = {lf.getModX(), 0, lf.getModZ()};
+    @EventHandler
+    public void onInvClick(org.bukkit.event.inventory.InventoryClickEvent e) {
+        if (isMarker(e.getCurrentItem()) || isMarker(e.getCursor())
+                || (e.getClick() == org.bukkit.event.inventory.ClickType.NUMBER_KEY && e.getWhoClicked() instanceof Player pl
+                    && isMarker(pl.getInventory().getItem(e.getHotbarButton())))) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent e) { sweepMarkers(e.getPlayer()); }
+
+    @EventHandler
+    public void onDeath(PlayerDeathEvent e) {
+        e.getDrops().removeIf(this::isMarker);
+        endSession(e.getEntity().getUniqueId());
+    }
+
+    /** 確定: 今のプレビュー位置で、画像を非同期で減色してから貼る */
+    void confirm(Player p, Session se) {
+        if (!p.hasPermission("imagepaste.use")) { lang.send(p, "no-permission"); return; }
+        refresh(p, se);
+        Target t = se.last;
+        if (t == null) { lang.send(p, "look-at-block"); return; }
+        if (!sessions.remove(p.getUniqueId(), se)) return;
+        sessions.put(p.getUniqueId(), se); // 変換が終わるまで表示は維持
         final UUID id = p.getUniqueId();
-        msg(p, "processing", "画像を変換中です...");
+        lang.send(p, "processing");
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
             ImageProcessor.Result res = null;
             String err = null;
@@ -450,14 +530,16 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
             }
             final String ferr = err; final ImageProcessor.Result fres = res;
             getServer().getScheduler().runTask(this, () -> {
+                if (sessions.get(id) != se) return; // 変換中に中止された
+                endSession(id);
                 Player pl = getServer().getPlayer(id);
                 if (pl == null) return;
-                if (ferr != null) { msg(pl, "error", "失敗: {reason}", "reason", ferr); return; }
+                if (ferr != null) { lang.send(pl, "error", "reason", ferr); return; }
                 try {
-                    place(pl, clicked, face, look, se.o, fres);
+                    place(pl, t.block(), t.face(), t.look(), se.o, fres);
                 } catch (RuntimeException ex) {
                     getLogger().warning("貼り付け失敗: " + ex);
-                    msg(pl, "error", "失敗: {reason}", "reason", "内部エラー");
+                    lang.send(pl, "error", "reason", "内部エラー");
                 }
             });
         });
@@ -470,6 +552,28 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
             case 2 -> BlockFace.NORTH;
             default -> BlockFace.EAST;
         };
+    }
+
+    private ItemStack mapItem(MapView view) {
+        ItemStack item = new ItemStack(Material.FILLED_MAP);
+        MapMeta mm = (MapMeta) item.getItemMeta();
+        mm.setMapView(view);
+        item.setItemMeta(mm);
+        return item;
+    }
+
+    private ItemFrame spawnFrame(World w, Block spot, BlockFace face, int steps, boolean glow, boolean invisible, boolean fixed,
+                                 ItemStack item, String pid) {
+        Class<? extends ItemFrame> type = glow ? GlowItemFrame.class : ItemFrame.class;
+        return w.spawn(spot.getLocation(), type, ent -> {
+            ent.setFacingDirection(face, true);
+            ent.setVisible(!invisible);
+            ent.setFixed(fixed);
+            ent.setItemDropChance(0f);
+            ent.setItem(item, false);
+            if (steps > 0) ent.setRotation(Rotation.values()[steps]);
+            ent.getPersistentDataContainer().set(pasteKey, PersistentDataType.STRING, pid);
+        });
     }
 
     private void place(Player p, Block clicked, BlockFace face, int[] look, Opts o, ImageProcessor.Result r) {
@@ -490,12 +594,12 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
                 if (!canHang(spot, back, face)) { bad++; continue; }
                 cells.add(new int[]{col, row});
             }
-        if (bad > 0 && !skip) { msg(p, "blocked", "置き場所が埋まっているため中止しました (問題の枠: {n})", "n", bad); return; }
-        if (cells.isEmpty()) { msg(p, "blocked", "置き場所が埋まっているため中止しました (問題の枠: {n})", "n", bad); return; }
+        if ((bad > 0 && !skip) || cells.isEmpty()) { lang.send(p, "blocked", "count", bad); return; }
 
         String pid = store.newId();
         List<Store.Frame> frames = new ArrayList<>();
         List<int[]> placed = new ArrayList<>();
+        List<Location> centers = new ArrayList<>();
         try {
             for (int[] cell : cells) {
                 int col = cell[0], row = cell[1];
@@ -505,39 +609,48 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
                 view.setTrackingPosition(false);
                 view.setUnlimitedTracking(false);
                 view.addRenderer(new TileRenderer(store, view.getId(), px));
-                ItemStack item = new ItemStack(Material.FILLED_MAP);
-                MapMeta mm = (MapMeta) item.getItemMeta();
-                mm.setMapView(view);
-                item.setItemMeta(mm);
                 Layout.Tile lt = Layout.tile(fv, look, rq, cols, rows, col, row);
                 Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
-                final int steps = lt.rotation();
-                Class<? extends ItemFrame> type = o.glow ? GlowItemFrame.class : ItemFrame.class;
-                ItemFrame fr = w.spawn(spot.getLocation(), type, ent -> {
-                    ent.setFacingDirection(face, true);
-                    ent.setVisible(!o.invisible);
-                    ent.setFixed(o.fixed);
-                    ent.setItemDropChance(0f);
-                    ent.setItem(item, false);
-                    if (steps > 0) ent.setRotation(Rotation.values()[steps]);
-                    ent.getPersistentDataContainer().set(pasteKey, PersistentDataType.STRING, pid);
-                });
-                frames.add(new Store.Frame(fr.getUniqueId(), spot.getX(), spot.getY(), spot.getZ(), view.getId()));
+                ItemFrame fr = spawnFrame(w, spot, face, lt.rotation(), o.glow, o.invisible, o.fixed, mapItem(view), pid);
+                frames.add(new Store.Frame(fr.getUniqueId(), spot.getX(), spot.getY(), spot.getZ(), view.getId(), face.name(), lt.rotation()));
                 placed.add(new int[]{view.getId(), row * cols + col});
+                centers.add(spot.getLocation().add(0.5, 0.5, 0.5).add(face.getModX() * 0.4, face.getModY() * 0.4, face.getModZ() * 0.4));
             }
         } catch (RuntimeException ex) {
             for (Store.Frame f : frames) { Entity en = Bukkit.getEntity(f.uuid()); if (en != null) en.remove(); }
             throw ex;
         }
-        Store.Paste paste = new Store.Paste(pid, p.getUniqueId(), p.getName(), w.getName(), System.currentTimeMillis(), cols, rows, frames);
+        Store.Paste paste = new Store.Paste(pid, p.getUniqueId(), p.getName(), w.getName(), System.currentTimeMillis(), cols, rows, frames,
+                o.invisible, o.glow, o.fixed);
         store.add(paste);
         byte[][] tiles = r.tiles();
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
             for (int[] pl : placed) store.saveTile(pl[0], tiles[pl[1]]);
         });
-        msg(p, "placed", "貼り付けました ({cols}x{rows}タイル, 地図{count}枚)。/imagepaste undo で取り消せます",
-                "cols", cols, "rows", rows, "count", frames.size());
-        if (bad > 0) msg(p, "skipped", "{n}枠は置けないため飛ばしました", "n", bad);
+        lang.send(p, "placed", "cols", cols, "rows", rows, "count", frames.size(), "id", pid);
+        if (bad > 0) lang.send(p, "skipped", "count", bad);
+        effect("place", w, centers);
+    }
+
+    /** 貼り付け・撤去の演出 (パーティクルと効果音)。config の effects.<名前> で変更できる */
+    void effect(String name, World w, List<Location> centers) {
+        ConfigurationSection s = getConfig().getConfigurationSection("effects." + name);
+        if (s == null || !s.getBoolean("enabled", true) || centers.isEmpty()) return;
+        Particle pt = particleOf(s.getString("particle", "HAPPY_VILLAGER"), null);
+        int count = Math.max(0, s.getInt("count-per-tile", 3));
+        double spread = s.getDouble("spread", 0.3);
+        int cap = Math.max(1, s.getInt("max-tiles", 64));
+        if (pt != null && count > 0 && pt.getDataType() == Void.class) {
+            int stride = Math.max(1, (centers.size() + cap - 1) / cap);
+            for (int i = 0; i < centers.size(); i += stride) w.spawnParticle(pt, centers.get(i), count, spread, spread, spread, 0.02);
+        }
+        String sound = s.getString("sound", "");
+        if (sound != null && !sound.isBlank()) {
+            double x = 0, y = 0, z = 0;
+            for (Location l : centers) { x += l.getX(); y += l.getY(); z += l.getZ(); }
+            Location c = new Location(w, x / centers.size(), y / centers.size(), z / centers.size());
+            w.playSound(c, sound, SoundCategory.BLOCKS, (float) s.getDouble("volume", 1.0), (float) s.getDouble("pitch", 1.0));
+        }
     }
 
     private boolean canHang(Block spot, Block back, BlockFace face) {
@@ -548,9 +661,11 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
         return true;
     }
 
-    // ---------- 削除 ----------
-    private void removePaste(Store.Paste p) {
+    // ---------- 削除・破損の整合 ----------
+    /** 貼り付け全体を撤去する (額縁・記録・地図データ)。ドロップは出さない */
+    void removePaste(Store.Paste p) {
         World w = Bukkit.getWorld(p.world);
+        List<Location> centers = new ArrayList<>();
         if (w != null) {
             for (Store.Frame f : p.frames) {
                 Entity en = Bukkit.getEntity(f.uuid());
@@ -558,10 +673,66 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
                     w.getChunkAt(f.x() >> 4, f.z() >> 4); // チャンクを読み込んで探す
                     en = Bukkit.getEntity(f.uuid());
                 }
-                if (en instanceof ItemFrame fr) { fr.setFixed(false); fr.setItem(null, false); fr.remove(); }
+                if (en instanceof ItemFrame fr) { centers.add(fr.getLocation()); fr.setFixed(false); fr.setItem(null, false); fr.remove(); }
             }
         }
         store.remove(p);
+        if (w != null) effect("remove", w, centers);
+    }
+
+    /** 額縁が (保護をすり抜けて) 失われた。次の tick に、設定に従って記録と残りのタイルを整える */
+    void frameLost(UUID frameId) {
+        getServer().getScheduler().runTask(this, () -> handleLost(frameId));
+    }
+
+    private void handleLost(UUID id) {
+        Store.Paste p = store.byFrame(id);
+        if (p == null) return;
+        Store.Frame f = null;
+        for (Store.Frame x : p.frames) if (x.uuid().equals(id)) { f = x; break; }
+        if (f == null) return;
+        switch (onBreak) {
+            case REMOVE_ALL -> { removePaste(p); notifyOwner(p, "broken-removed", "id", p.id); }
+            case REGENERATE -> {
+                Store.Frame nf = null;
+                try { nf = respawn(p, f); } catch (RuntimeException ex) { getLogger().warning("額縁の再生成に失敗: " + ex); }
+                if (nf != null) notifyOwner(p, "broken-regenerated", "id", p.id);
+                else dropFrame(p, f);
+            }
+            default -> dropFrame(p, f);
+        }
+    }
+
+    private void dropFrame(Store.Paste p, Store.Frame f) {
+        boolean empty = store.dropFrame(p, f);
+        if (empty) notifyOwner(p, "broken-gone", "id", p.id);
+        else notifyOwner(p, "broken-partial", "id", p.id, "count", p.frames.size());
+    }
+
+    /** 同じ場所・向き・地図で額縁を作り直す。置けなければ null */
+    private Store.Frame respawn(Store.Paste p, Store.Frame f) {
+        World w = Bukkit.getWorld(p.world);
+        if (w == null || f.face() == null) return null;
+        BlockFace face = BlockFace.valueOf(f.face());
+        MapView view = Bukkit.getMap(f.mapId());
+        if (view == null) return null;
+        Block spot = w.getBlockAt(f.x(), f.y(), f.z());
+        if (!canHang(spot, spot.getRelative(face.getOppositeFace()), face)) return null;
+        ItemFrame fr = spawnFrame(w, spot, face, f.rot(), p.glow, p.invisible, p.fixed, mapItem(view), p.id);
+        Store.Frame nf = f.withUuid(fr.getUniqueId());
+        store.replaceFrame(p, f, nf);
+        return nf;
+    }
+
+    /** 同じ貼り付けの通知は2秒に1回まで (一括で壊れたときの連投を防ぐ) */
+    private void notifyOwner(Store.Paste p, String key, Object... kv) {
+        getLogger().info("貼り付け " + p.id + ": " + key);
+        long now = System.currentTimeMillis();
+        Long last = notified.get(p.id + key);
+        if (last != null && now - last < 2000) return;
+        notified.put(p.id + key, now);
+        Player o = getServer().getPlayer(p.owner);
+        if (o != null) lang.send(o, key, kv);
     }
 
     // ---------- 地図の再接続 (再起動後) ----------
@@ -576,41 +747,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
 
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
-        sessions.remove(e.getPlayer().getUniqueId());
+        endSession(e.getPlayer().getUniqueId());
         lastUse.remove(e.getPlayer().getUniqueId());
-    }
-
-    // ---------- タブ補完 ----------
-    @Override
-    public List<String> onTabComplete(CommandSender s, Command c, String label, String[] a) {
-        if (!s.hasPermission("imagepaste.use")) return List.of();
-        List<String> out = new ArrayList<>();
-        String cur = a[a.length - 1].toLowerCase(Locale.ROOT);
-        if (a.length == 1) {
-            out.addAll(List.of("undo", "cancel", "confirm", "size", "rotate", "flip", "list", "remove", "help"));
-            if (s.hasPermission("imagepaste.admin")) out.add("reload");
-        } else if (a[0].equalsIgnoreCase("remove") && a.length == 2) {
-            if (s instanceof Player p) store.byOwner(p.getUniqueId()).forEach(x -> out.add(x.id));
-            else store.all().forEach(x -> out.add(x.id));
-        } else if (a[0].equalsIgnoreCase("list") && a.length == 2) {
-            if (s.hasPermission("imagepaste.admin")) out.add("all");
-        } else if (a[0].equalsIgnoreCase("rotate") && a.length == 2) {
-            out.addAll(List.of("0", "90", "180", "270"));
-        } else if (a[0].equalsIgnoreCase("flip") && a.length == 2) {
-            out.addAll(List.of("none", "h", "v", "both"));
-        } else if (a[0].equalsIgnoreCase("size") && a.length <= 3) {
-            out.addAll(List.of("1", "2", "4", "8"));
-        } else if (List.of("undo", "cancel", "confirm", "reload", "remove", "list").contains(a[0].toLowerCase(Locale.ROOT))) {
-            return List.of();
-        } else {
-            int eq = cur.indexOf('=');
-            if (eq < 0) { for (String k : Opts.KEYS) out.add(k + "="); }
-            else {
-                String k = cur.substring(0, eq);
-                for (String v : Opts.valuesFor(k)) out.add(k + "=" + v);
-            }
-        }
-        out.removeIf(x -> !x.toLowerCase(Locale.ROOT).startsWith(cur));
-        return out;
     }
 }

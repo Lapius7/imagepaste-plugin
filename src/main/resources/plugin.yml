@@ -6,7 +6,7 @@ description: 画像URLを地図+不可視額縁のタイルで壁・床・天井
 commands:
   imagepaste:
     description: 画像を貼り付ける
-    usage: "/imagepaste <URL> | size|rotate|flip|confirm|cancel|undo|list|remove|reload"
+    usage: "/imagepaste help"
     aliases: [ip]
     permission: imagepaste.use
 permissions:
@@ -19,3 +19,6 @@ permissions:
   imagepaste.bypass:
     description: クールダウンとサイズ上限を無視する
     default: false
+  imagepaste.break:
+    description: 保護された貼り付けの額縁を壊す (config の protection.allow-break-permission)
+    default: op
