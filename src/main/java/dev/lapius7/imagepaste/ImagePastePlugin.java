@@ -30,6 +30,8 @@ import org.bukkit.util.RayTraceResult;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.nio.file.Files;
+import org.bukkit.configuration.file.YamlConfiguration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,6 +45,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         final BufferedImage img;
         final Opts o;
         final int maxW, maxH, maxTiles;
+        int paperSlot = -1;
         long expires;
         double scroll;
         Target last;
@@ -72,6 +75,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        migrateConfig();
         pasteKey = new NamespacedKey(this, "paste");
         markerKey = new NamespacedKey(this, "marker");
         lang = new Lang(this);
@@ -94,7 +98,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         int purged = store.purgeOrphanTiles();
         if (purged > 0) getLogger().info("記録にない地図データを " + purged + "件 削除しました");
         guard.sweepLoaded();
-        for (Player p : getServer().getOnlinePlayers()) sweepMarkers(p);
+        for (Player p : getServer().getOnlinePlayers()) restoreItems(p);
         getLogger().info("読み込み完了 (貼り付け " + store.all().size() + "件, 破損時: " + onBreak + ")");
     }
 
@@ -104,6 +108,46 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         if (ticker != null) ticker.cancel();
     }
 
+    static final int CONFIG_VERSION = 2;
+
+    /**
+     * config.yml を新しい版に合わせる。旧版の既定値のままの項目は新しい既定値へ更新し、
+     * ユーザーが変えた値は残す。足りないキーは jar の既定値で補う。変更前は config.yml.bak-v<旧版> に控える。
+     */
+    void migrateConfig() {
+        var c = getConfig();
+        int ver = c.getInt("config-version", 0);
+        boolean dirty = false;
+        if (ver < CONFIG_VERSION) {
+            Object[][] old = {
+                    {"limits.max-width", 16, 0}, {"limits.max-height", 16, 0}, {"limits.max-tiles", 128, 0},
+            };
+            for (Object[] o : old) {
+                if (c.contains((String) o[0], true) && c.get((String) o[0]) instanceof Number n && n.intValue() == (int) o[1]) {
+                    c.set((String) o[0], o[2]);
+                    dirty = true;
+                }
+            }
+        }
+        var def = c.getDefaults();
+        if (def != null) for (String k : def.getKeys(true)) {
+            if (def.isConfigurationSection(k) || c.contains(k, true)) continue;
+            c.set(k, def.get(k));
+            dirty = true;
+        }
+        if (ver < CONFIG_VERSION) { c.set("config-version", CONFIG_VERSION); dirty = true; }
+        if (!dirty) return;
+        try {
+            java.nio.file.Path cf = getDataFolder().toPath().resolve("config.yml");
+            java.nio.file.Path bak = getDataFolder().toPath().resolve("config.yml.bak-v" + ver);
+            if (Files.exists(cf) && !Files.exists(bak)) Files.copy(cf, bak);
+            saveConfig();
+            getLogger().info("config.yml を v" + CONFIG_VERSION + " に更新しました (控え: " + bak.getFileName() + ")");
+        } catch (IOException e) {
+            getLogger().warning("config.yml の更新に失敗: " + e);
+        }
+    }
+
     ImageFetcher newFetcher() {
         ConfigurationSection d = getConfig().getConfigurationSection("download");
         return new ImageFetcher(d == null ? new org.bukkit.configuration.MemoryConfiguration() : d);
@@ -111,6 +155,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
 
     void reloadAll() {
         reloadConfig();
+        migrateConfig();
         lang.reload();
         fetcher = newFetcher();
         loadCfg();
@@ -177,7 +222,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         if (w > se.maxW || h > se.maxH) { lang.send(p, "too-large", "maxw", se.maxW, "maxh", se.maxH); return false; }
         Opts t = new Opts(); t.width = w; t.height = h;
         int[] d = ImageProcessor.dims(se.img.getWidth(), se.img.getHeight(), t, se.maxW, se.maxH);
-        if (d[0] * d[1] > se.maxTiles) { lang.send(p, "too-many-tiles", "max", se.maxTiles); return false; }
+        if ((long) d[0] * d[1] > se.maxTiles) { lang.send(p, "too-many-tiles", "max", se.maxTiles); return false; }
         se.o.width = w; se.o.height = h;
         touch(se);
         return true;
@@ -253,14 +298,14 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
                 if (ferr != null) { lang.send(pl, "error", "reason", ferr); return; }
                 while (o.width > 1) {
                     int[] d = ImageProcessor.dims(fimg.getWidth(), fimg.getHeight(), o, fw, fh);
-                    if (d[0] * d[1] <= ft) break;
+                    if ((long) d[0] * d[1] <= ft) break;
                     o.width--; o.height = 0;
                 }
                 Session se = new Session(fimg, o, fw, fh, ft);
                 touch(se);
                 sessions.put(id, se);
                 startGuide(pl, se);
-                ensureMarker(pl);
+                ensureMarker(pl, se);
                 lang.send(pl, "ready");
             });
         });
@@ -274,7 +319,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         if (p == null) return;
         if (se.bar != null) p.hideBossBar(se.bar);
         if (se.prevBoard != null) p.setScoreboard(se.prevBoard);
-        sweepMarkers(p);
+        restoreItems(p);
         if (actionbarOn) p.sendActionBar(Component.empty());
     }
 
@@ -331,20 +376,80 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         if (isMarker(p.getItemOnCursor())) p.setItemOnCursor(null);
     }
 
-    /** 素手のままだと空中の右クリックが届かないため、持ち手が空のときだけ一時アイテムを持たせる */
-    private void ensureMarker(Player p) {
-        if (!airClickItem) return;
-        PlayerInventory inv = p.getInventory();
-        ItemStack hand = inv.getItemInMainHand();
-        if (isMarker(hand)) return;
-        sweepMarkers(p);
-        if (!hand.getType().isAir()) return;
+    private java.nio.file.Path stashFile(UUID id) { return getDataFolder().toPath().resolve("stash").resolve(id + ".yml"); }
+
+    private ItemStack newMarker() {
         ItemStack m = new ItemStack(Material.PAPER);
         var meta = m.getItemMeta();
         meta.displayName(lang.c("marker-name"));
         meta.getPersistentDataContainer().set(markerKey, PersistentDataType.BYTE, (byte) 1);
         m.setItemMeta(meta);
-        inv.setItemInMainHand(m);
+        return m;
+    }
+
+    /**
+     * 確定用の紙を渡す。手が空でなくても、空きホットバーに入れて選択する。
+     * 空きがなければ現在のスロットの品を退避する。退避内容は stash/UUID.yml に書き、落ちても復元できる。
+     */
+    private void giveMarker(Player p, Session se) {
+        restoreItems(p);
+        PlayerInventory inv = p.getInventory();
+        int orig = inv.getHeldItemSlot(), slot = -1;
+        if (isEmpty(inv.getItem(orig))) slot = orig;
+        else for (int i = 0; i < 9; i++) if (isEmpty(inv.getItem(i))) { slot = i; break; }
+        ItemStack stashed = null;
+        if (slot < 0) { slot = orig; stashed = inv.getItem(orig).clone(); }
+        YamlConfiguration y = new YamlConfiguration();
+        y.set("orig", orig);
+        y.set("slot", slot);
+        if (stashed != null) y.set("item", stashed);
+        try {
+            Files.createDirectories(stashFile(p.getUniqueId()).getParent());
+            y.save(stashFile(p.getUniqueId()).toFile());
+        } catch (IOException e) {
+            getLogger().warning("退避の保存に失敗したため紙を渡しません: " + e);
+            return;
+        }
+        inv.setItem(slot, newMarker());
+        inv.setHeldItemSlot(slot);
+        se.paperSlot = slot;
+    }
+
+    private static boolean isEmpty(ItemStack it) { return it == null || it.getType().isAir(); }
+
+    /** 紙と退避したアイテムを元に戻す (元のスロットの選択も戻す)。何もなければ紙だけ片付ける */
+    void restoreItems(Player p) {
+        java.nio.file.Path f = stashFile(p.getUniqueId());
+        int slot = -1, orig = -1;
+        ItemStack item = null;
+        if (Files.exists(f)) {
+            YamlConfiguration y = YamlConfiguration.loadConfiguration(f.toFile());
+            slot = y.getInt("slot", -1);
+            orig = y.getInt("orig", -1);
+            item = y.getItemStack("item");
+        }
+        sweepMarkers(p);
+        PlayerInventory inv = p.getInventory();
+        if (item != null) {
+            if (slot >= 0 && slot < 9 && isEmpty(inv.getItem(slot))) inv.setItem(slot, item);
+            else inv.addItem(item).values().forEach(i -> p.getWorld().dropItemNaturally(p.getLocation(), i));
+        }
+        if (orig >= 0 && orig < 9) inv.setHeldItemSlot(orig);
+        try { Files.deleteIfExists(f); } catch (IOException e) { getLogger().warning("退避ファイルの削除に失敗: " + e); }
+    }
+
+    private ItemStack stashedItem(UUID id) {
+        java.nio.file.Path f = stashFile(id);
+        return Files.exists(f) ? YamlConfiguration.loadConfiguration(f.toFile()).getItemStack("item") : null;
+    }
+
+    /** 紙を維持する。手が空になったら紙のスロットを選び直す (空の手では空中クリックが届かないため) */
+    private void ensureMarker(Player p, Session se) {
+        if (!airClickItem) return;
+        if (se.paperSlot < 0) { giveMarker(p, se); return; }
+        PlayerInventory inv = p.getInventory();
+        if (!isMarker(inv.getItem(se.paperSlot)) && isEmpty(inv.getItem(se.paperSlot))) inv.setItem(se.paperSlot, newMarker());
+        if (isEmpty(inv.getItemInMainHand()) && isMarker(inv.getItem(se.paperSlot))) inv.setHeldItemSlot(se.paperSlot);
     }
 
     // ---------- プレビュー描画 ----------
@@ -363,7 +468,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             Session se = en.getValue();
             if (p == null || !p.isOnline()) { endSession(en.getKey()); continue; }
             if (now > se.expires) { endSession(en.getKey()); lang.send(p, "expired"); continue; }
-            try { ensureMarker(p); renderPreview(p, se); } catch (RuntimeException ex) { getLogger().warning("プレビュー描画に失敗: " + ex); }
+            try { ensureMarker(p, se); renderPreview(p, se); } catch (RuntimeException ex) { getLogger().warning("プレビュー描画に失敗: " + ex); }
         }
     }
 
@@ -485,7 +590,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         Player p = e.getPlayer();
         Session se = sessions.get(p.getUniqueId());
         if (se == null) return;
-        if (!p.isSneaking()) { getServer().getScheduler().runTask(this, () -> { if (sessions.containsKey(p.getUniqueId())) ensureMarker(p); }); return; }
+        if (!p.isSneaking()) { getServer().getScheduler().runTask(this, () -> { if (sessions.get(p.getUniqueId()) == se) ensureMarker(p, se); }); return; }
         e.setCancelled(true);
         int d = Math.floorMod(e.getNewSlot() - e.getPreviousSlot() + 4, 9) - 4;
         se.scroll += (invertScroll ? d : -d);
@@ -524,12 +629,19 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onJoin(PlayerJoinEvent e) { sweepMarkers(e.getPlayer()); }
+    public void onJoin(PlayerJoinEvent e) { restoreItems(e.getPlayer()); }
 
     @EventHandler
     public void onDeath(PlayerDeathEvent e) {
         e.getDrops().removeIf(this::isMarker);
-        endSession(e.getEntity().getUniqueId());
+        UUID id = e.getEntity().getUniqueId();
+        if (!e.getKeepInventory()) {
+            // 退避中の品は、インベントリではなく退避ファイルにあるので、ここで落とし物に加える
+            ItemStack st = stashedItem(id);
+            if (st != null) e.getDrops().add(st);
+            try { Files.deleteIfExists(stashFile(id)); } catch (IOException ignored) {}
+        }
+        endSession(id);
     }
 
     /** 確定: 今のプレビュー位置で、画像を非同期で減色してから貼る */

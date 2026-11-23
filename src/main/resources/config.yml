@@ -1,3 +1,5 @@
+config-version: 2   # 自動で管理されます。変えないでください
+
 # ImagePaste 設定。/imagepaste reload で反映。
 # defaults の項目は、コマンド引数 (例: /imagepaste <URL> width=6 dither=none) で一回だけ上書きできます。
 
