@@ -1,228 +1,250 @@
-# ImagePaste
+<div align="center">
 
-![Minecraft](https://img.shields.io/badge/Minecraft-1.18.2%20~%2026.3-62b47a)
-![Paper](https://img.shields.io/badge/Paper-%E5%BF%85%E9%A0%88-0a6cff)
-![Java](https://img.shields.io/badge/Java-17%2B-orange)
-[![Release](https://img.shields.io/github/v/release/Lapius7/imagepaste-plugin)](https://github.com/Lapius7/imagepaste-plugin/releases/latest)
+<p align="center"><b>English</b> | <a href="README.ja.md">日本語</a></p>
 
-画像の URL を指定すると、地図入りの額縁タイルとして壁・床・天井に貼れる Paper プラグインです。
-貼る前にパーティクルの枠でプレビューでき、大きさ・向き・反転をその場で調整できます。
+<h1 align="center">ImagePaste</h1>
 
-## 特徴
+<h3 align="center">Paste an image from a URL onto walls, floors and ceilings as map tiles.</h3>
 
-- URL から画像を取得し、地図の色に減色して貼り付けます(PNG / JPEG / GIF など、Java が読める形式)。
-- プレビュー付き。見ている面に貼り付け範囲が枠で出ます。上辺は黄色で、画像の上がどちらかが分かります。
-- Shift+スクロールで拡縮、`F` で回転、`Q` で反転。右クリックで確定、左クリックで中止します。
-- 大きな画像は複数 tick に分けて配置し、進捗をボスバーに表示します。`/imagepaste cancel` で中止して片付けられます。
-- 貼ったものは記録され、`list` / `undo` / `remove` / `tp` で管理できます。再起動後も残ります。
-- 貼った額縁は保護され、破壊・回転・地図の取り出しを拒否します。
-- 取得先の制限(内部アドレスの拒否、サイズ・時間の上限、ホストの許可リスト)があります。
-- 文言は `lang.yml` (MiniMessage) で変えられます。
+<p align="center">A Paper plugin for Minecraft. It shows a particle outline before placing, so you can adjust size, rotation and flip on the spot.</p>
 
-## 対応バージョン
+<p align="center">
+  <a href="https://github.com/Lapius7/imagepaste-plugin/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Lapius7/imagepaste-plugin?label=release&style=flat-square&color=e8833a&logo=github"></a>
+  <img alt="Minecraft 1.18.2 to 26.3" src="https://img.shields.io/badge/Minecraft-1.18.2%20~%2026.3-62b47a?style=flat-square">
+  <img alt="Paper required" src="https://img.shields.io/badge/Paper-required-0a6cff?style=flat-square">
+  <img alt="Java 17+" src="https://img.shields.io/badge/Java-17%2B-f89820?style=flat-square&logo=openjdk&logoColor=white">
+  <a href="https://github.com/Lapius7/imagepaste-plugin/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Lapius7/imagepaste-plugin?style=flat-square&color=e3b341&logo=github"></a>
+  <a href="https://github.com/Lapius7/imagepaste-plugin/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/Lapius7/imagepaste-plugin?style=flat-square&color=3b82f6"></a>
+</p>
 
-1 つの jar で、Paper 1.18.2 〜 26.3 を対象にしています。Java 17 でコンパイルしているので、サーバー側は各 Minecraft 版が要求する Java で動きます(1.18〜1.20.4 は 17 以上、1.20.5 以降は 21 以上、26.x は 25)。
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#safety">Safety</a> ·
+  <a href="#supported-versions">Versions</a>
+</p>
 
-| 版 | Paper | ロード・起動 | 貼り付け〜undo |
-|---|---|---|---|
-| 1.18.2 | build 388 | 確認済み | 確認済み |
-| 1.19.4 | 最新 build | 確認済み | 確認済み |
-| 1.20.1 | 最新 build | 確認済み | 確認済み |
-| 1.20.4 | 最新 build | 確認済み | 確認済み |
-| 1.20.6 | 最新 build | 確認済み | 確認済み |
-| 1.21.1 | 最新 build | 確認済み | 確認済み |
-| 1.21.4 | 最新 build | 確認済み | 確認済み |
-| 1.21.11 | 最新 build | 確認済み | 確認済み |
-| 26.1.2 | 最新 build | 確認済み | 未検証 |
-| 26.2 | 最新 build | 確認済み | 未検証 |
-| 26.3 | build 259 | 確認済み | 未検証 |
-| 1.17 以前 | - | 未検証 (対象外) | - |
+</div>
 
-- 「ロード・起動」は、その版の Paper サーバーに jar を入れて起動し、`Enabling ImagePaste` と読み込み完了のログが出て、エラーがないことを見ています。
-- 「貼り付け〜undo」は、ヘッドレスのボット(mineflayer)で入室し、`/imagepaste <URL> width=2` → 壁を見て右クリック → 額縁 4 個の出現 → `list` → `undo` で額縁が 0 個に戻るところまでを見ています。26.x は、ボット側がまだ対応しておらず、この手順を回せていません。
-- 未検証の範囲: 実プレイヤーのクライアントでの見た目(プレビュー粒子、ボスバー、サイドバー)、Shift+スクロール・`F`・`Q` の操作、複数人での同時利用、Folia。
+---
 
-**Spigot / CraftBukkit では動きません。** メッセージに Paper 同梱の Adventure (MiniMessage) を使っているためです。Paper 必須です。
+Run `/imagepaste <URL>`, look at a surface, and right-click. The image is reduced to map colors and placed as invisible item frames holding maps.
 
-## インストール
+<p align="center">
+  <img src="docs/images/preview.png" alt="Preview outline on the ground while a pasted image is visible on a wall" width="100%">
+</p>
 
-1. [Releases](https://github.com/Lapius7/imagepaste-plugin/releases/latest) から `ImagePaste-<版>.jar` をダウンロードします。
-2. サーバーの `plugins/` に入れて起動します。
-3. `plugins/ImagePaste/config.yml` と `lang.yml` が作られます。権限を付けるか、OP で `/imagepaste` を実行してください。
+<table>
+  <tr>
+    <td width="60%"><img src="docs/images/preview-wall.png" alt="Close-up of the particle outline on a wall: cyan edge, white corners, yellow top edge" width="100%"></td>
+    <td>The outline in the preview. Cyan is the edge, white the corners, and yellow marks the <b>top</b> of the image. If any frame cannot be placed, the whole outline turns red.</td>
+  </tr>
+</table>
 
-## 使い方
+## Features
 
-1. `/imagepaste <画像URL> [オプション]` を実行します。画像を取得すると**プレビュー**に入ります。
-2. 貼りたい面を見ます。外周は水色、四隅は白、上辺は黄色の線と矢印です。置けない枠があると全体が赤になります。
-3. 次の操作で調整し、右クリックで貼ります。
+- **Preview before placing**: the outline follows the surface you look at, up to `preview.max-distance` (default 64 blocks).
+- **Adjust live**: Shift+scroll to resize, `F` to rotate, `Q` to flip. Right-click confirms, left-click cancels.
+- **Any surface**: walls, floors and ceilings.
+- **Large images**: placed over several ticks, with progress on a boss bar. `/imagepaste cancel` stops and cleans up.
+- **Management**: `list`, `undo`, `remove` and `tp`. Records survive restarts.
+- **Protection**: placed frames reject breaking, rotating and taking the map out.
+- **Fetch limits**: internal addresses are refused, with limits on size, time and ports, and an optional host allowlist.
+- **Messages** are in `lang.yml` (MiniMessage).
 
-| 操作 | 内容 |
-|---|---|
-| Shift + スクロール | 大きさを拡縮 |
-| `F` (持ち替え) | 90 度回転 (時計回り) |
-| `Q` (ドロップ) | 反転を切替 (なし → 左右 → 上下 → 両方) |
-| 右クリック | 確定して貼る |
-| 左クリック | キャンセル |
+## Quick start
 
-- 床では画像の上はプレイヤーが向いている方向、天井では逆向きです。壁では上が上になります。
-- 狙っている面が遠くても (`preview.max-distance`、既定 64) 置けます。確定は、そのとき表示している位置で行います。
-- 素手だと空中の右クリックがサーバーに届かないため、持ち手が空のときだけ一時的に紙を持たせます(`preview.air-click-item: false` で無効)。終了時に元の持ち物へ戻します。落ちた場合も、次のログインか起動時に復元します。
-- 操作の一覧は `preview.guide.mode` で bossbar / scoreboard / chat / none に切り替えられます。
+You need a Paper server (1.18.2 to 26.3) running the Java version that Minecraft release requires.
 
-例: `/imagepaste https://example.com/a.png width=6 quality=high background=#000000`
-
-## コマンド
-
-引数なしの `/imagepaste` (別名 `/ip`) でヘルプが開きます。ヘルプの行はクリックで入力欄に入ります。
-
-| コマンド | 内容 |
-|---|---|
-| `/imagepaste <URL> [key=value ...]` | プレビューを開始。URL は `://` を含むもの |
-| `help` | ヘルプ |
-| `size <w> [h]` | プレビューの大きさを指定 |
-| `rotate [0\|90\|180\|270]` | 回転 (省略で 90 度ずつ) |
-| `flip [none\|h\|v\|both]` | 反転 (省略で順に切替) |
-| `confirm` / `cancel` | 確定 / 中止 (処理中の取り消しにも使います) |
-| `undo` | 直前の貼り付けを削除 |
-| `list [all] [ページ]` | 一覧。`all` は管理者のみ |
-| `remove <id>` | 指定 ID を削除 (他人のものは管理者のみ) |
-| `tp <id>` | 貼り付けの場所へ移動 |
-| `reload` | config.yml と lang.yml を再読み込み (管理者) |
-
-## 権限
-
-| 権限 | 内容 | 既定 |
-|---|---|---|
-| `imagepaste.use` | 貼り付け・undo・自分の削除 | op |
-| `imagepaste.admin` | reload、他人の一覧・削除 | op |
-| `imagepaste.break` | 保護された額縁を壊す | op |
-| `imagepaste.bypass` | クールダウンとサイズ上限を無視 | なし |
-| `imagepaste.max-tiles.<数>` | その人のタイル数上限 (持っている中で最大のもの) | なし |
-| `imagepaste.max-size.<数>` | その人の縦横の上限 | なし |
-
-## 設定
-
-`config.yml` の `defaults` が既定値で、コマンドの `key=value` でその回だけ上書きできます。
-
-| 項目 (コマンドでの名前) | 値 | 内容 |
-|---|---|---|
-| `width` (`w`) | 整数 | 横のブロック数 (既定 4) |
-| `height` (`h`) | 整数 / 0 | 縦のブロック数。0 は縦横比から自動 |
-| `mode` | fit / fill / stretch | 全体を収める / 隙間なく覆う / 引き伸ばす |
-| `quality` | low / normal / high | `resample` と `dither` の一括指定 |
-| `resample` | nearest / bilinear / bicubic | 拡大縮小の方式 |
-| `dither` | none / floyd / ordered | ディザリング |
-| `brightness` | -1.0〜1.0 | 明るさ |
-| `contrast` | 0.0〜3.0 | コントラスト |
-| `saturation` | 0.0〜3.0 | 彩度 |
-| `background` | transparent / #RRGGBB | 余白と透明部分の色 |
-| `rotate` | 0 / 90 / 180 / 270 | 時計回りの回転 |
-| `flip` | none / h / v / both | 反転 |
-| `invisible` (config は `invisible-frame`) | true / false | 額縁を不可視にする |
-| `glow` (config は `glow-frame`) | true / false | 発光額縁を使う |
-| `fixed` | true / false | 額縁を固定する |
-| `blocked` (config は `on-blocked`) | abort / skip | 置けない枠があるとき、全体を中止 / その枠だけ飛ばす |
-
-### limits
-
-| 項目 | 既定 | 内容 |
-|---|---|---|
-| `max-width` / `max-height` | 0 | 最大ブロック数。0 以下は無制限 |
-| `max-tiles` | 0 | 1 回の最大タイル(地図)数。0 は無制限 (内部の安全上限は 262144) |
-| `cooldown-seconds` | 10 | 連続実行の間隔 |
-| `pending-timeout-seconds` | 120 | 操作がないままプレビューを保てる時間 |
-
-### download
-
-| 項目 | 既定 | 内容 |
-|---|---|---|
-| `max-bytes` | 10485760 | ファイルサイズ上限 (10 MiB) |
-| `max-source-pixels` | 40000000 | 元画像の画素数上限。0 以下で無制限 |
-| `connect-timeout-seconds` / `timeout-seconds` | 5 / 15 | 接続・全体の時間上限 |
-| `max-redirects` | 3 | リダイレクト回数上限 |
-| `max-concurrent` | 3 | 同時取得数 |
-| `allowed-ports` | [80, 443] | 許可ポート |
-| `allowed-hosts` | [] | 空なら全公開ホスト。指定すると完全一致かサブドメインのみ |
-
-### place
-
-| 項目 | 既定 | 内容 |
-|---|---|---|
-| `tiles-per-tick` | 16 | 1 tick に作るタイル数。0 で一度に全部 |
-| `load-chunks` | true | false なら読み込み済みチャンクの範囲だけに置く |
-
-### preview
-
-| 項目 | 既定 | 内容 |
-|---|---|---|
-| `interval-ticks` | 4 | 枠の更新間隔。小さいほど滑らかだが負荷が増える |
-| `max-distance` | 64 | 見ている面を探す距離 (ブロック) |
-| `air-click-item` | true | 素手のとき空中クリック用の紙を持たせる |
-| `particle` | DUST | 粒子の種類。DUST 以外は色指定が効かない |
-| `particle-size` | 1.0 | DUST の大きさ |
-| `edge-step` | 0.5 | 粒子の間隔 (ブロック) |
-| `edge-color` / `top-color` / `corner-color` / `error-color` | #55FFFF / #FFFF55 / #FFFFFF / #FF5555 | 外周 / 上辺 / 四隅 / エラー時の色 |
-| `scroll-sensitivity` / `scroll-step` | 1 / 1 | 何ノッチで 1 段階か / 1 段階で変わるブロック数 |
-| `invert-scroll` | false | スクロール方向を逆にする |
-| `actionbar-enabled` | true | 現在値をアクションバーに出す |
-| `guide.mode` | bossbar | 操作一覧の表示: bossbar / scoreboard / chat / none |
-| `guide.bossbar-color` / `guide.bossbar-overlay` | BLUE / PROGRESS | ボスバーの色と形 |
-
-### effects
-
-| 項目 | 内容 |
-|---|---|
-| `place.*` | 設置演出。`enabled`、`duration-ticks`、`count-multiplier`、`layers` (粒子)、`corner-bursts`、`sounds` |
-| `progress.*` | 処理中の進捗表示。`display` は bossbar / actionbar / title / none。`show-eta`、`frame.*` (範囲の枠の点滅) |
-| `remove.*` | 撤去演出。粒子 1 種と音 1 つ |
-
-粒子名は、新しい名前 (`DUST`、`EXPLOSION_EMITTER`) と古い名前 (`REDSTONE`、`EXPLOSION_HUGE`) のどちらでも指定できます。その版にない粒子は無視されます。
-
-### protection
-
-| 項目 | 既定 | 内容 |
-|---|---|---|
-| `enabled` | true | 破壊・回転・アイテムの出し入れ・地図の取り出しを拒否 |
-| `allow-break-permission` | true | `imagepaste.break` を持つ人だけ壊せる |
-| `on-break` | protect | 額縁が失われたとき: `protect` は記録だけ外す / `remove-all` は全体を撤去 / `regenerate` は作り直す |
-
-メッセージは `plugins/ImagePaste/lang.yml` にあり、MiniMessage 形式です。`<id>` のような部分は実行時の値で、足りない項目は内蔵の文を使います。`/imagepaste reload` で反映されます。
-config.yml は `config-version` で管理していて、旧版の既定値のままの項目は新しい既定値に更新し、変更済みの値は残します。更新前は `config.yml.bak-v<旧版>` に控えます。
-
-## よくある質問
-
-**Spigot で使えますか。**
-使えません。Paper が必要です。
-
-**画像が取得できません。**
-`http` / `https` のみで、ポートは 80 / 443 が既定です。ループバックやプライベートアドレスはリダイレクト先も含めて拒否します。ファイルが 10 MiB を超える場合は `download.max-bytes` を上げてください。
-
-**プレビューの枠が見えません。**
-`preview.max-distance` の範囲内のブロックを見ているか確認してください。クライアントの粒子設定が「最小」だと、表示されないことがあります。
-
-**色が元の画像と違います。**
-地図は決まったパレット (数十色) しか使えないので、減色されます。`quality=high` やディザリング (`dither=floyd`) で見た目が近くなります。
-
-**貼った画像を消すには。**
-`/imagepaste undo` か `/imagepaste remove <id>` です。額縁を直接壊しても保護されるので消えません。壊せる権限 (`imagepaste.break`) を付けると、壊した分の記録が整理されます。
-
-**古い版で粒子が出ません。**
-一部の粒子は新しい版にしかありません。`effects.place.layers` などで、その版にある粒子を指定してください。
-
-## 制限事項
-
-- 無制限タイルは、サーバーの負荷に直結します。既定は上限なしですが、公開サーバーでは `limits.max-tiles` か `imagepaste.max-tiles.<数>` で上限を設けてください。地図 1 枚ごとに `map_N.dat` ができるので、数千枚規模ではワールドの容量も増えます。
-- 配置は `place.tiles-per-tick` ずつ進むので、大きな画像は時間がかかります。
-- 地図の色数の制限があるため、写真は元の色とは一致しません。
-- 1.17 以前と Folia は対象外です。Folia は動作を確認していません。
-- クライアント側の操作 (スクロール、`F`、`Q`、右クリック確定) は、実機での確認が自動化できていません。
-
-## ビルド
-
-Java 17 以上と Gradle が必要です。
+1. Download `ImagePaste-<version>.jar` from [Releases](https://github.com/Lapius7/imagepaste-plugin/releases/latest).
+2. Put it in `plugins/` and start the server. `config.yml` and `lang.yml` are created under `plugins/ImagePaste/`.
+3. Give yourself `imagepaste.use` (ops have it by default).
+4. In game:
 
 ```
+/imagepaste https://example.com/a.png width=6 quality=high
+```
+
+Look at the surface, adjust, and right-click.
+
+| Input | Action |
+|---|---|
+| Shift + scroll | Resize |
+| `F` (swap hands) | Rotate 90° clockwise |
+| `Q` (drop) | Cycle flip: none → horizontal → vertical → both |
+| Right-click | Confirm and place |
+| Left-click | Cancel |
+
+On a floor, the top of the image points where you face; on a ceiling, the opposite way; on a wall, up is up.
+
+> [!TIP]
+> With an empty hand, a right-click in the air never reaches the server. While previewing, ImagePaste temporarily puts a paper in your hand and restores your item afterwards (or at next login/startup if the server stopped first). Set `preview.air-click-item: false` to turn this off.
+
+## Commands
+
+`/imagepaste` (alias `/ip`) without arguments opens help. Help lines are clickable.
+
+<details>
+<summary>All commands</summary>
+
+| Command | What it does |
+|---|---|
+| `/imagepaste <URL> [key=value ...]` | Start a preview. A URL is anything containing `://` |
+| `help` | Show help |
+| `size <w> [h]` | Set the preview size |
+| `rotate [0\|90\|180\|270]` | Rotate (no argument: 90° steps) |
+| `flip [none\|h\|v\|both]` | Flip (no argument: cycle) |
+| `confirm` / `cancel` | Place / abort (also cancels a running job) |
+| `undo` | Remove your last paste |
+| `list [all] [page]` | List pastes. `all` is admin only |
+| `remove <id>` | Remove by ID (others' pastes: admin only) |
+| `tp <id>` | Teleport to a paste |
+| `reload` | Reload `config.yml` and `lang.yml` (admin) |
+
+</details>
+
+<details>
+<summary>Permissions</summary>
+
+| Permission | What it allows | Default |
+|---|---|---|
+| `imagepaste.use` | Paste, undo, remove your own | op |
+| `imagepaste.admin` | reload, list and remove others' | op |
+| `imagepaste.break` | Break protected frames | op |
+| `imagepaste.bypass` | Ignore cooldown and size limits | none |
+| `imagepaste.max-tiles.<n>` | Per-player tile limit (largest held wins) | none |
+| `imagepaste.max-size.<n>` | Per-player width/height limit | none |
+
+</details>
+
+## Configuration
+
+The `defaults` section of `config.yml` holds the default options. Any of them can be overridden for one paste with `key=value` in the command.
+
+<details>
+<summary>Command options (defaults)</summary>
+
+| Option | Values | Meaning |
+|---|---|---|
+| `width` (`w`) | integer | Width in blocks (default 4) |
+| `height` (`h`) | integer / 0 | Height in blocks. 0 = from aspect ratio |
+| `mode` | fit / fill / stretch | Fit inside / cover fully / stretch |
+| `quality` | low / normal / high | Sets `resample` and `dither` together |
+| `resample` | nearest / bilinear / bicubic | Scaling method |
+| `dither` | none / floyd / ordered | Dithering |
+| `brightness` | -1.0 to 1.0 | Brightness |
+| `contrast` | 0.0 to 3.0 | Contrast |
+| `saturation` | 0.0 to 3.0 | Saturation |
+| `background` | transparent / #RRGGBB | Color for margins and transparent areas |
+| `rotate` | 0 / 90 / 180 / 270 | Clockwise rotation |
+| `flip` | none / h / v / both | Flip |
+| `invisible` (config: `invisible-frame`) | true / false | Make frames invisible |
+| `glow` (config: `glow-frame`) | true / false | Use glow item frames |
+| `fixed` | true / false | Fixed frames |
+| `blocked` (config: `on-blocked`) | abort / skip | If a spot is blocked: abort all / skip that frame |
+
+</details>
+
+<details>
+<summary>limits, download, place</summary>
+
+| Key | Default | Meaning |
+|---|---|---|
+| `limits.max-width` / `max-height` | 0 | Max blocks. 0 or less = unlimited |
+| `limits.max-tiles` | 0 | Max tiles (maps) per paste. 0 = unlimited (internal cap 262144) |
+| `limits.cooldown-seconds` | 10 | Delay between pastes |
+| `limits.pending-timeout-seconds` | 120 | How long an idle preview is kept |
+| `download.max-bytes` | 10485760 | File size limit (10 MiB) |
+| `download.max-source-pixels` | 40000000 | Source image pixel limit. 0 or less = unlimited |
+| `download.connect-timeout-seconds` / `timeout-seconds` | 5 / 15 | Connect / total time limit |
+| `download.max-redirects` | 3 | Redirect limit |
+| `download.max-concurrent` | 3 | Concurrent downloads |
+| `download.allowed-ports` | [80, 443] | Allowed ports |
+| `download.allowed-hosts` | [] | Empty = any public host. Otherwise exact match or subdomain only |
+| `place.tiles-per-tick` | 16 | Tiles created per tick. 0 = all at once |
+| `place.load-chunks` | true | If false, place only within loaded chunks |
+
+</details>
+
+<details>
+<summary>preview, effects, protection</summary>
+
+| Key | Default | Meaning |
+|---|---|---|
+| `preview.interval-ticks` | 4 | Outline refresh interval. Lower is smoother but costs more |
+| `preview.max-distance` | 64 | How far to look for a surface (blocks) |
+| `preview.air-click-item` | true | Give a paper for air clicks when the hand is empty |
+| `preview.particle` | DUST | Particle type. Colors only apply to DUST |
+| `preview.particle-size` / `edge-step` | 1.0 / 0.5 | DUST size / spacing in blocks |
+| `preview.edge-color` / `top-color` / `corner-color` / `error-color` | #55FFFF / #FFFF55 / #FFFFFF / #FF5555 | Edge / top / corners / error |
+| `preview.scroll-sensitivity` / `scroll-step` | 1 / 1 | Notches per step / blocks per step |
+| `preview.invert-scroll` | false | Reverse scroll direction |
+| `preview.actionbar-enabled` | true | Show current values on the action bar |
+| `preview.guide.mode` | bossbar | Controls hint: bossbar / scoreboard / chat / none |
+| `effects.place.*` | | Placement effect: `enabled`, `duration-ticks`, `count-multiplier`, `layers`, `corner-bursts`, `sounds` |
+| `effects.progress.*` | | Progress display: bossbar / actionbar / title / none, `show-eta`, `frame.*` |
+| `effects.remove.*` | | Removal effect: one particle and one sound |
+| `protection.enabled` | true | Reject breaking, rotating, item changes and map removal |
+| `protection.allow-break-permission` | true | Only holders of `imagepaste.break` can break frames |
+| `protection.on-break` | protect | When a frame is lost: `protect` drops the record only, `remove-all` removes the whole paste, `regenerate` rebuilds it |
+
+Particle names accept both new (`DUST`, `EXPLOSION_EMITTER`) and old (`REDSTONE`, `EXPLOSION_HUGE`) forms. Particles that do not exist in the running version are ignored.
+
+</details>
+
+`config.yml` is versioned by `config-version`. On upgrade, values still at the old default move to the new default and edited values stay. The previous file is saved as `config.yml.bak-v<old version>`.
+
+## Safety
+
+> [!WARNING]
+> There is no tile limit by default. On a public server, set `limits.max-tiles` or `imagepaste.max-tiles.<n>`. Each map writes a `map_N.dat` file, so thousands of tiles also grow the world size.
+
+> [!NOTE]
+> Fetching accepts `http` / `https` only. Loopback and private addresses are refused, including redirect targets.
+
+## Supported versions
+
+One jar covers Paper 1.18.2 to 26.3. It is compiled for Java 17 against the Paper 1.18.2 API, and newer APIs are looked up at runtime. The server needs the Java version its Minecraft release requires (17+ for 1.18 to 1.20.4, 21+ from 1.20.5, 25 for 26.x).
+
+**Spigot and CraftBukkit are not supported.** Messages use Adventure (MiniMessage) bundled with Paper.
+
+<details>
+<summary>Verification per version</summary>
+
+| Version | Loads and starts | Paste to undo |
+|---|---|---|
+| 1.18.2 | Verified | Verified |
+| 1.19.4 | Verified | Verified |
+| 1.20.1 | Verified | Verified |
+| 1.20.4 | Verified | Verified |
+| 1.20.6 | Verified | Verified |
+| 1.21.1 | Verified | Verified |
+| 1.21.4 | Verified | Verified |
+| 1.21.11 | Verified | Verified |
+| 26.1.2 | Verified | Not verified |
+| 26.2 | Verified | Not verified |
+| 26.3 | Verified | Not verified |
+| 1.17 and older | Not supported | - |
+
+- **Loads and starts**: the jar was put on that version's Paper server, and the log showed `Enabling ImagePaste` and finished loading with no errors.
+- **Paste to undo**: a headless bot (mineflayer) joined, ran `/imagepaste <URL> width=2`, looked at a wall and right-clicked, and 4 item frames appeared. `list` showed it, and `undo` brought the count back to 0. The bot does not support 26.x yet, so this was not run there.
+
+</details>
+
+> [!NOTE]
+> Not verified: the client-side controls (scroll, `F`, `Q`, right-click) and their look on a real client, and Folia. 1.17 and older are not supported.
+
+## Development
+
+Needs Java 17+ and Gradle.
+
+```sh
 gradle build
 ```
 
-`build/libs/ImagePaste-<版>.jar` ができます。最小対応版 (Paper 1.18.2 の API) に対して Java 17 向けにコンパイルしており、新しい版にだけある API は実行時に調べて使います。
+The jar is written to `build/libs/ImagePaste-<version>.jar`.
+
+## License
+
+No license file has been added yet.
