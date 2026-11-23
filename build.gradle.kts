@@ -13,6 +13,9 @@ repositories {
 dependencies {
     // サーバーの paper.jar (26.3-258) の API に合わせる
     compileOnly("io.papermc.paper:paper-api:26.3.build.258-stable")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -32,4 +35,8 @@ tasks.processResources {
 
 tasks.jar {
     archiveFileName = "mc-image-paste-${project.version}.jar"
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

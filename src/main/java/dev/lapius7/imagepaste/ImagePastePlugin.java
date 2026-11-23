@@ -19,7 +19,6 @@ import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapView;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.util.Vector;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -212,31 +211,14 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
         };
     }
 
-    private static Vector vec(BlockFace f) { return new Vector(f.getModX(), f.getModY(), f.getModZ()); }
-
-    /** 画像の「上」 T のまま、視線 d から見た右方向 R = d x T */
-    private static Vector right(Vector d, Vector t) { return d.clone().crossProduct(t); }
-
     private void place(Player p, Block clicked, BlockFace face, Pending pd) {
         ImageProcessor.Result r = pd.result();
         Opts o = pd.opts();
         int cols = r.cols(), rows = r.rows();
-        Vector d = vec(face).multiply(-1);
-        Vector up, T0 = null;
-        int rotSteps = 0;
-        boolean horizontal = face == BlockFace.UP || face == BlockFace.DOWN;
-        if (!horizontal) {
-            up = new Vector(0, 1, 0);
-        } else {
-            up = vec(cardinal(p.getLocation().getYaw()));
-            // rotate オプション: 時計回りに回す
-            for (int i = 0; i < o.rotate / 90; i++) up = right(d, up);
-            // 額縁の回転 0 のとき、地図の上は 上向き面=北 / 下向き面=南
-            T0 = vec(face == BlockFace.UP ? BlockFace.NORTH : BlockFace.SOUTH);
-            Vector t = T0.clone();
-            while (!t.equals(up) && rotSteps < 4) { t = right(d, t); rotSteps++; }
-        }
-        Vector rightV = right(d, up);
+        int[] fv = {face.getModX(), face.getModY(), face.getModZ()};
+        BlockFace lf = cardinal(p.getLocation().getYaw());
+        int[] look = {lf.getModX(), 0, lf.getModZ()};
+        int rq = o.rotate / 90;
 
         World w = clicked.getWorld();
         Block base = clicked.getRelative(face);
@@ -245,7 +227,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
         int bad = 0;
         for (int row = 0; row < rows; row++)
             for (int col = 0; col < cols; col++) {
-                Block spot = base.getLocation().add(rightV.clone().multiply(col)).add(up.clone().multiply(rows - 1 - row)).getBlock();
+                Layout.Tile lt = Layout.tile(fv, look, rq, cols, rows, col, row);
+                Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
                 Block back = spot.getRelative(face.getOppositeFace());
                 if (!canHang(spot, back, face)) { bad++; continue; }
                 cells.add(new int[]{col, row});
@@ -269,8 +252,9 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
                 MapMeta mm = (MapMeta) item.getItemMeta();
                 mm.setMapView(view);
                 item.setItemMeta(mm);
-                Block spot = base.getLocation().add(rightV.clone().multiply(col)).add(up.clone().multiply(rows - 1 - row)).getBlock();
-                final int steps = rotSteps;
+                Layout.Tile lt = Layout.tile(fv, look, rq, cols, rows, col, row);
+                Block spot = base.getRelative(lt.dx(), lt.dy(), lt.dz());
+                final int steps = lt.rotation();
                 Class<? extends ItemFrame> type = o.glow ? GlowItemFrame.class : ItemFrame.class;
                 ItemFrame fr = w.spawn(spot.getLocation(), type, ent -> {
                     ent.setFacingDirection(face, true);
@@ -278,7 +262,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener, TabE
                     ent.setFixed(o.fixed);
                     ent.setItemDropChance(0f);
                     ent.setItem(item, false);
-                    if (steps > 0) ent.setRotation(Rotation.values()[steps * 2 % 8]);
+                    if (steps > 0) ent.setRotation(Rotation.values()[steps]);
                     ent.getPersistentDataContainer().set(pasteKey, PersistentDataType.STRING, pid);
                 });
                 frames.add(new Store.Frame(fr.getUniqueId(), spot.getX(), spot.getY(), spot.getZ(), view.getId()));
