@@ -238,16 +238,6 @@ Paper サーバー(1.16.5〜26.3)と、その Minecraft 版が要求する Java 
 > [!NOTE]
 > 未検証: 実クライアントでの操作(スクロール・`F`・`Q`・右クリック)と見た目、Folia。1.12.2 以前は対象外です。
 
-## 開発
-
-JDK 17 以上と Gradle が必要です。jar 自体は Java 8 向けです(構文は Jabel で下げています)。
-
-```sh
-gradle build
-```
-
-`build/libs/ImagePaste-<版>.jar` ができます。
-
 ## ライセンス
 
 [MIT](LICENSE)

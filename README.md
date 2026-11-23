@@ -238,16 +238,6 @@ On 1.16.5 there is no glow item frame, so normal item frames are used. 1.12.2 is
 > [!NOTE]
 > Not verified: the client-side controls (scroll, `F`, `Q`, right-click) and their look on a real client, and Folia. 1.12.2 and older are not supported.
 
-## Development
-
-Needs JDK 17+ and Gradle. The jar itself targets Java 8 (syntax is down-leveled with Jabel).
-
-```sh
-gradle build
-```
-
-The jar is written to `build/libs/ImagePaste-<version>.jar`.
-
 ## License
 
 [MIT](LICENSE)
