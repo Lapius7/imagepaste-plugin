@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class LangTest {
     private static void clicks(Component c, List<String> out) {
-        if (c.clickEvent() != null && c.clickEvent().payload() instanceof ClickEvent.Payload.Text t) out.add(t.value());
+        if (c.clickEvent() != null) out.add(c.clickEvent().value());
         c.children().forEach(ch -> clicks(ch, out));
     }
 

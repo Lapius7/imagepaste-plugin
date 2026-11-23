@@ -65,7 +65,7 @@ final class Commands implements CommandExecutor, TabCompleter {
     }
 
     private void help(CommandSender s) {
-        s.sendMessage(lang.c("help-header", "version", pl.getPluginMeta().getVersion()));
+        s.sendMessage(lang.c("help-header", "version", pl.getDescription().getVersion()));
         s.sendMessage(lang.c("help-hint"));
         s.sendMessage(lang.c("help-section-paste"));
         s.sendMessage(line("https://", "<URL> [オプション]", "cmd-url"));

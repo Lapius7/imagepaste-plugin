@@ -1,6 +1,5 @@
 package dev.lapius7.imagepaste;
 
-import io.papermc.paper.scoreboard.numbers.NumberFormat;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import org.bukkit.*;
@@ -22,8 +21,6 @@ import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapView;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scoreboard.Criteria;
-import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.util.RayTraceResult;
@@ -90,6 +87,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         guard = new Guard(this);
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(guard, this);
+        guard.registerRemoveListener();
         PluginCommand cmd = Objects.requireNonNull(getCommand("imagepaste"));
         Commands c = new Commands(this);
         cmd.setExecutor(c);
@@ -166,17 +164,13 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     // ---------- 設定 ----------
     private int previewDistance = 64;
     private double edgeStep = 0.5, dustSize = 1.0;
-    private Particle particle = Particle.DUST;
+    private Particle particle = Compat.dust();
     private Color edgeColor, topColor, cornerColor, errorColor;
     private int scrollNotches = 1, scrollStep = 1;
     private boolean invertScroll, actionbarOn = true, airClickItem = true;
     private String guideMode = "bossbar";
 
-    private Particle particleOf(String name, Particle def) {
-        if (name == null) return def;
-        Particle pt = Registry.PARTICLE_TYPE.get(NamespacedKey.minecraft(name.toLowerCase(Locale.ROOT)));
-        return pt != null ? pt : def;
-    }
+    private Particle particleOf(String name, Particle def) { return Compat.particle(name, def); }
 
     private void loadCfg() {
         var c = getConfig();
@@ -193,7 +187,7 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
         actionbarOn = c.getBoolean("preview.actionbar-enabled", true);
         airClickItem = c.getBoolean("preview.air-click-item", true);
         guideMode = c.getString("preview.guide.mode", "bossbar").toLowerCase(Locale.ROOT);
-        particle = particleOf(c.getString("preview.particle", "DUST"), Particle.DUST);
+        particle = particleOf(c.getString("preview.particle", "DUST"), Compat.dust());
         try {
             onBreak = OnBreak.valueOf(c.getString("protection.on-break", "protect").toUpperCase(Locale.ROOT).replace('-', '_'));
         } catch (IllegalArgumentException e) { onBreak = OnBreak.PROTECT; }
@@ -352,14 +346,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
             case "scoreboard" -> {
                 se.prevBoard = p.getScoreboard();
                 Scoreboard sb = Bukkit.getScoreboardManager().getNewScoreboard();
-                Objective ob = sb.registerNewObjective("ipaste", Criteria.DUMMY, lang.c("guide-title"));
-                ob.setDisplaySlot(DisplaySlot.SIDEBAR);
-                ob.numberFormat(NumberFormat.blank());
-                for (int i = 0; i < lines.size(); i++) {
-                    var sc = ob.getScore("§" + Integer.toHexString(i));
-                    sc.setScore(lines.size() - i);
-                    sc.customName(lang.parse(lines.get(i)));
-                }
+                Objective ob = Compat.sidebar(sb, "ipaste", lang.c("guide-title"));
+                for (int i = 0; i < lines.size(); i++) Compat.sidebarLine(ob, i, lines.size() - i, lang.parse(lines.get(i)));
                 p.setScoreboard(sb);
             }
             case "chat" -> {
@@ -460,8 +448,8 @@ public final class ImagePastePlugin extends JavaPlugin implements Listener {
     // ---------- プレビュー描画 ----------
     private void spawn(Player p, double x, double y, double z, Color col, float size) {
         Location l = new Location(p.getWorld(), x, y, z);
-        if (particle == Particle.DUST)
-            p.getWorld().spawnParticle(Particle.DUST, List.of(p), null, x, y, z, 1, 0, 0, 0, 0, new Particle.DustOptions(col, size), true);
+        if (particle == Compat.dust())
+            p.getWorld().spawnParticle(particle, List.of(p), null, x, y, z, 1, 0, 0, 0, 0, new Particle.DustOptions(col, size), true);
         else if (particle.getDataType() == Void.class)
             p.getWorld().spawnParticle(particle, List.of(p), null, x, y, z, 1, 0, 0, 0, 0, null, true);
     }

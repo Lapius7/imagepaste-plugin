@@ -10,7 +10,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.entity.EntityRemoveEvent;
 import org.bukkit.event.hanging.HangingBreakByEntityEvent;
 import org.bukkit.event.hanging.HangingBreakEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
@@ -91,15 +90,33 @@ final class Guard implements Listener {
         if (enabled() && managed(e.getItemFrame())) e.setCancelled(true);
     }
 
-    /** 保護をすり抜けた消失 (/kill、他プラグインなど)。プラグイン自身の削除・アンロード・退出は除く */
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onRemove(EntityRemoveEvent e) {
-        if (!(e.getEntity() instanceof ItemFrame)) return;
-        switch (e.getCause()) {
-            case DEATH, EXPLODE, DESPAWN, HIT, OUT_OF_WORLD, DROP, PICKUP, ENTER_BLOCK, TRANSFORMATION, MERGE -> {}
-            default -> { return; }
+    private static final java.util.Set<String> LOST_CAUSES = java.util.Set.of(
+            "DEATH", "EXPLODE", "DESPAWN", "HIT", "OUT_OF_WORLD", "DROP", "PICKUP", "ENTER_BLOCK", "TRANSFORMATION", "MERGE");
+
+    /**
+     * 保護をすり抜けた消失 (/kill、他プラグインなど)。プラグイン自身の削除・アンロード・退出は除く。
+     * EntityRemoveEvent は 1.20.3 以降にしかないため、あるときだけ反射で登録する。
+     */
+    @SuppressWarnings("unchecked")
+    void registerRemoveListener() {
+        Class<? extends org.bukkit.event.Event> ev;
+        java.lang.reflect.Method getEntity, getCause;
+        try {
+            ev = (Class<? extends org.bukkit.event.Event>) Class.forName("org.bukkit.event.entity.EntityRemoveEvent");
+            getEntity = ev.getMethod("getEntity");
+            getCause = ev.getMethod("getCause");
+        } catch (ReflectiveOperationException e) {
+            return; // 古い版: 消失の検知は、チャンク読み込み時の突き合わせに任せる
         }
-        if (pl.store.byFrame(e.getEntity().getUniqueId()) != null) pl.frameLost(e.getEntity().getUniqueId());
+        final java.lang.reflect.Method ge = getEntity, gc = getCause;
+        pl.getServer().getPluginManager().registerEvent(ev, this, EventPriority.MONITOR, (l, event) -> {
+            try {
+                if (!(ge.invoke(event) instanceof ItemFrame fr)) return;
+                if (!LOST_CAUSES.contains(String.valueOf(gc.invoke(event)))) return;
+                if (pl.store.byFrame(fr.getUniqueId()) != null) pl.frameLost(fr.getUniqueId());
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }, pl);
     }
 
     @EventHandler

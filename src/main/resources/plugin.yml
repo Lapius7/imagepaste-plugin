@@ -1,7 +1,7 @@
 name: ImagePaste
 version: '${version}'
 main: dev.lapius7.imagepaste.ImagePastePlugin
-api-version: '26.3'
+api-version: '1.18'
 description: 画像URLを地図+不可視額縁のタイルで壁・床・天井に貼る
 commands:
   imagepaste:
